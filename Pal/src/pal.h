@@ -221,31 +221,77 @@ PAL_CONTROL * pal_control_addr (void);
  * unallocated, reserved, or backed by committed memory
  */
 
-/* Memory Allocation Flags */
-#define PAL_ALLOC_RESERVE     0x0001   /* Only reserve the memory */
-
+/* Memory Allocation Types */
+/*!
+ * \brief Actually allocate the memory.
+ */
+#define PAL_ALLOC_COMMIT      0x0000
+/*!
+ * \brief Only reserve the memory
+ */
+#define PAL_ALLOC_RESERVE     0x0001
+/*!
+ * \brief For PAL-internal use.
+ */
 #ifdef IN_PAL
 #define PAL_ALLOC_INTERNAL    0x8000
 #endif
 
 /* Memory Protection Flags */
-#define PAL_PROT_NONE       0x0     /* 0x0 Page can not be accessed. */
-#define PAL_PROT_READ       0x1     /* 0x1 Page can be read. */
-#define PAL_PROT_WRITE      0x2     /* 0x2 Page can be written. */
-#define PAL_PROT_EXEC       0x4     /* 0x4 Page can be executed. */
-#define PAL_PROT_WRITECOPY  0x8     /* 0x8 Copy on write */
+/*! \brief Page can not be accessed. */
+#define PAL_PROT_NONE       0x0
+/*! \brief Page can be read. */
+#define PAL_PROT_READ       0x1
+/*! \brief Page can be written. */
+#define PAL_PROT_WRITE      0x2
+/*! \brief Page can be executed. */
+#define PAL_PROT_EXEC       0x4
+/*! \brief Copy on write. */
+#define PAL_PROT_WRITECOPY  0x8
 
 #define PAL_PROT_MASK       0xF
 
-
-// If addr != NULL, then the returned region is always exactly at addr.
+/*!
+ * \brief Allocate pages of virtual memory from the host.
+ *
+ * \param addr The virtual address at which to map the memory.
+ *
+ * \param size The number of bytes to map.  Must be a multiple of the page size (4KiB).
+ *
+ * \param alloc_type The type of allocation.  This can be PAL_ALLOC_COMMIT,
+ *        PAL_ALLOC_RESERVE, and PAL_ALLOC_INTERNAL.
+ *
+ * \param prot The memory protection flags.  This may be PAL_PROT_NONE, PAL_PROT_READ,
+ *        PAL_PROT_WRITE, PAL_PROT_EXEC, and PAL_PROT_WRITECOPY.
+ *
+ * If addr is NULL, the OS will pick an unmapped address at which to map the memory.  If non-NULL,
+ * the memory will be mapped exactly at addr, potentially unmapping other contents.
+ */
 PAL_PTR
 DkVirtualMemoryAlloc (PAL_PTR addr, PAL_NUM size, PAL_FLG alloc_type,
                       PAL_FLG prot);
 
+/*!
+ * \brief Unmap pages of virtual memory from the host.
+ *
+ * \param addr The virtual address at which to unmap the memory.
+ *
+ * \param size The number of bytes to unmap.  Must be a multiple of the page size (4KiB).
+ */
 void
 DkVirtualMemoryFree (PAL_PTR addr, PAL_NUM size);
 
+/*!
+ * \brief Change the memory protection on a region of virtual memory.
+ *
+ * \param addr The virtual address at which to change the protection.
+ *
+ * \param size The number of bytes in the region to change.  Must be a multiple of the page size
+ * (4KiB).
+ *
+ * \param prot The memory protection flags.  This may be PAL_PROT_NONE, PAL_PROT_READ,
+ *        PAL_PROT_WRITE, PAL_PROT_EXEC, and PAL_PROT_WRITECOPY.
+ */
 PAL_BOL
 DkVirtualMemoryProtect (PAL_PTR addr, PAL_NUM size, PAL_FLG prot);
 
@@ -261,9 +307,22 @@ DkVirtualMemoryProtect (PAL_PTR addr, PAL_NUM size, PAL_FLG prot);
 
 #define PAL_PROCESS_MASK         0x0
 
+/*!
+ * \brief Create a new Process.  Returns a stream handle to communicate
+ *         with the new child.
+ *
+ * \param uri The URI of the executable to load.
+ *
+ * \param args The input arguments (argv-style).
+ */
 PAL_HANDLE
 DkProcessCreate (PAL_STR uri, PAL_STR * args);
 
+/*!
+ * \brief Terminate the current process.  Does not return.
+ *
+ * \param exitCode The exit code of the process.
+ */
 noreturn void
 DkProcessExit (PAL_NUM exitCode);
 
@@ -276,40 +335,48 @@ DkProcessExit (PAL_NUM exitCode);
  * server applications.
  */
 
-/* DkStreamOpen
- *   access_mode: WRONLY or RDONLY or RDWR
- *   share_flags: permission for the created file
- *   create_flags: the creation options for the file
- *   options: other options
- */
 
 /* Stream Access Flags */
+/*! \brief Create this stream read-only. */
 #define PAL_ACCESS_RDONLY   00
+/*! \brief Create this stream write-only. */
 #define PAL_ACCESS_WRONLY   01
+/*! \brief Create this stream read-write. */
 #define PAL_ACCESS_RDWR     02
+/*! \brief Open this stream in append mode. */
 #define PAL_ACCESS_APPEND   04
 #define PAL_ACCESS_MASK     07
 
 /* Stream Sharing Flags */
+/*! \brief Globally executable.  Simlar to Unix o+x */
 #define PAL_SHARE_GLOBAL_X    01
+/*! \brief Globally writable.  Simlar to Unix o+w */
 #define PAL_SHARE_GLOBAL_W    02
+/*! \brief Globally readable.  Simlar to Unix o+r */
 #define PAL_SHARE_GLOBAL_R    04
+/*! \brief Group executable.  Simlar to Unix g+x */
 #define PAL_SHARE_GROUP_X    010
+/*! \brief Group writeable.  Simlar to Unix g+w */
 #define PAL_SHARE_GROUP_W    020
+/*! \brief Group readable.  Simlar to Unix g+r */
 #define PAL_SHARE_GROUP_R    040
+/*! \brief Owner executable.  Simlar to Unix u+x */
 #define PAL_SHARE_OWNER_X   0100
+/*! \brief Owner writeable.  Simlar to Unix u+w */
 #define PAL_SHARE_OWNER_W   0200
+/*! \brief Owner readable.  Simlar to Unix u+r */
 #define PAL_SHARE_OWNER_R   0400
 #define PAL_SHARE_MASK      0777
 
-/* Stream Create Flags */
-#define PAL_CREATE_TRY        0100       /* 0100 Create file if file not
-                                           exist (O_CREAT) */
-#define PAL_CREATE_ALWAYS     0200       /* 0300 Create file and fail if file
-                                           already exist (O_CREAT|O_EXCL) */
+/* Stream Creation Flags */
+/*! \brief Create file if file does not exist.  Similar to O_CREAT */
+#define PAL_CREATE_TRY        0100
+/*! \brief Create file and fail if the file does not exist.  Similar to (O_CREAT|O_EXCL) */
+#define PAL_CREATE_ALWAYS     0200
 #define PAL_CREATE_MASK       0300
 
 /* Stream Option Flags */
+/*! \brief Make this stream non-blocking */
 #define PAL_OPTION_NONBLOCK     04000
 #define PAL_OPTION_MASK         04000
 
@@ -323,6 +390,17 @@ DkProcessExit (PAL_NUM exitCode);
 
 #define WITHIN_MASK(val, mask)  (((val)|(mask)) == (mask))
 
+/* \brief Create and open a stream.
+ *
+ * \param access Set the permission on this stream handle, using the PAL Stream Access Flags.
+ *
+ * \param share_flags If the stream is backed by a file, and that file is created by this call, set
+ *        the permissions on that file.
+ *
+ * \param create Controls whether the call should create a non-existent file, or fail if the file exists.
+ *
+ * \param options Other options; currently the only option is setting the handle to non-blocking.
+ */
 PAL_HANDLE
 DkStreamOpen (PAL_STR uri, PAL_FLG access, PAL_FLG share_flags,
               PAL_FLG create, PAL_FLG options);

@@ -39,9 +39,9 @@ How to build Graphene?
 
 Graphene consists of three parts:
 
-- An instrumented GNU C Library
-- The Library OS itself (a shared library named ``libsysdb.so``, called the "shim" in our source code)
-- The Platform Adaptation Layer, or PAL, (a shared library named ``libpal.so``)
+* An instrumented GNU C Library
+* The Library OS itself (a shared library named ``libsysdb.so``, called the "shim" in our source code)
+* The Platform Adaptation Layer, or PAL, (a shared library named ``libpal.so``)
 
 Graphene currently only works on the x86_64 architecture.  Graphene is currently tested on Ubuntu
 16.04 and 18.04 (both server and desktop version), along with Linux kernel versions 3.x/4.x.  We

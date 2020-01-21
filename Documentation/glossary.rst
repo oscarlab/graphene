@@ -6,9 +6,11 @@ Glossary
 .. glossary::
 
    PAL
-      Platform Adaption Layer
+      Platform Adaption Layer.  The Graphene Library OS is programmed
+      against a very simplified OS ABI --- roughly 40 simple functions that are
+      easy to support on any host OS or hypervisor. This term is inherited from `Drawbridge <https://www.microsoft.com/en-us/research/project/drawbridge/>`_.
 
-      .. todo:: Is this really correct?
+      The PAL ABI is documented :doc:`here <pal/pal>`.
 
    SGX
       Software Guard Extensions is a set of instructions on Intel processors.
