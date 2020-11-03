@@ -240,6 +240,14 @@ The library uses the following EPID-specific environment variables if available:
 - ``RA_TLS_IAS_PUB_KEY_PEM`` (optional) -- public key of IAS. If not specified, the default
   hard-coded public key is used.
 
+The library uses the following Microsoft Azure Attestation (MAA) specific environment variables if
+available:
+
+- ``RA_TLS_MAA_JSON_FILE`` (optional) -- filename where the MAA-specific JSON content is generated.
+  The generated file contains "Type = 2", "EnclaveHeldDataHex" that contains the base64Url-encoded
+  public key of the RA-TLS certificate, and "QuoteHex" that contains the base64Url-encoded SGX
+  quote.
+
 ``ra_tls_verify_dcap.so``
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 

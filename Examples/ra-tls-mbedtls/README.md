@@ -68,6 +68,7 @@ RA_CLIENT_SPID=12345678901234567890123456789012 RA_CLIENT_LINKABLE=0 make app ep
 
 SGX=1 ./pal_loader ./server epid &
 
+RA_TLS_MAA_JSON_FILE="maa.json" \
 RA_TLS_EPID_API_KEY=12345678901234567890123456789012 \
 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
 RA_TLS_MRENCLAVE=1234567890123456789012345678901234567890123456789012345678901234 \
@@ -77,6 +78,9 @@ RA_TLS_ISV_PROD_ID=0 RA_TLS_ISV_SVN=0 \
 
 # client will successfully connect to the server via RA-TLS/EPID flows
 kill %%
+
+# you can open the generated file maa.json for Microsoft Azure Attestation (MAA)
+# in your favorite text editor
 ```
 
 - RA-TLS flows with SGX and with Graphene, ECDSA-based (DCAP) attestation:
@@ -88,6 +92,7 @@ make app dcap
 
 SGX=1 ./pal_loader ./server dcap &
 
+RA_TLS_MAA_JSON_FILE="maa.json" \
 RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1 \
 RA_TLS_MRENCLAVE=1234567890123456789012345678901234567890123456789012345678901234 \
 RA_TLS_MRSIGNER=1234567890123456789012345678901234567890123456789012345678901234 \
@@ -96,6 +101,9 @@ RA_TLS_ISV_PROD_ID=0 RA_TLS_ISV_SVN=0 \
 
 # client will successfully connect to the server via RA-TLS/DCAP flows
 kill %%
+
+# you can open the generated file maa.json for Microsoft Azure Attestation (MAA)
+# in your favorite text editor
 ```
 
 - RA-TLS flows with SGX and with Graphene, client with its own verification callback:

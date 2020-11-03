@@ -9,6 +9,8 @@
 
 #define RA_TLS_EPID_API_KEY "RA_TLS_EPID_API_KEY"
 
+#define RA_TLS_MAA_JSON_FILE "RA_TLS_MAA_JSON_FILE"
+
 #define RA_TLS_ALLOW_OUTDATED_TCB_INSECURE "RA_TLS_ALLOW_OUTDATED_TCB_INSECURE"
 
 #define RA_TLS_MRSIGNER    "RA_TLS_MRSIGNER"
@@ -35,6 +37,7 @@
 static const uint8_t quote_oid[] = OID(0x06);
 static const size_t quote_oid_len = sizeof(quote_oid);
 #define QUOTE_MAX_SIZE 8192
+#define MAA_JSON_FILE_MAX_SIZE (QUOTE_MAX_SIZE * 3)
 
 typedef int (*verify_measurements_cb_t)(const char* mrenclave, const char* mrsigner,
                                         const char* isv_prod_id, const char* isv_svn);
@@ -52,6 +55,9 @@ int cmp_crt_pk_against_quote_report_data(mbedtls_x509_crt* crt, sgx_quote_t* quo
 
 __attribute__ ((visibility("hidden")))
 int verify_quote_against_envvar_measurements(const void* quote, size_t quote_size);
+
+__attribute__ ((visibility("hidden")))
+int generate_maa_json_file(const void* quote, size_t quote_size, mbedtls_x509_crt* crt);
 
 /*!
  * \brief Callback for user-specific verification of measurements in SGX quote.

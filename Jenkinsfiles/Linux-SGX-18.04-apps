@@ -166,6 +166,7 @@ pipeline {
                                     make SGX=1 check_epid RA_CLIENT_SPID=${ra_client_spid} \
                                                           RA_TLS_EPID_API_KEY=${ra_client_key} \
                                                           RA_CLIENT_LINKABLE=0 \
+                                                          RA_TLS_MAA_JSON_FILE="maa.json" \
                                                           RA_TLS_ALLOW_OUTDATED_TCB_INSECURE=1; \
                                     make SGX=1 check_epid_fail RA_CLIENT_SPID=${ra_client_spid} \
                                                                RA_TLS_EPID_API_KEY=${ra_client_key} \
