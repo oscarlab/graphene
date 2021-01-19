@@ -1,8 +1,14 @@
-#include <asm/fcntl.h>
-#include <asm/mman.h>
+/* SPDX-License-Identifier: LGPL-3.0-or-later */
+/* Copyright (C) 2014 Stony Brook University */
+/* Copyright (C) 2020 Intel Corporation */
+
+/*!
+ * This file contains the implementation of `/proc/[remote-pid]` dir. Currently only adding remote
+ * PIDs to the list of `/proc/[pids]` and checking PID existence ("match path") are implemented.
+ */
+
 #include <asm/unistd.h>
 #include <errno.h>
-#include <linux/fcntl.h>
 
 #include "pal.h"
 #include "pal_error.h"
@@ -17,366 +23,310 @@
 #include "shim_utils.h"
 #include "stat.h"
 
-static int parse_ipc_thread_name(const char* name, IDTYPE* pidptr, const char** next,
-                                 size_t* next_len, const char** nextnext) {
-    const char* p = name;
-    IDTYPE pid    = 0;
+static struct pid_status_cache {
+    size_t status_num;
+    struct pid_status* status;
+} g_pid_status_cache;
 
-    if (*p == '/')
-        p++;
+static struct shim_lock g_pid_status_lock;
 
-    for (; *p && *p != '/'; p++) {
-        if (*p < '0' || *p > '9')
-            return -ENOENT;
+/* returns PID of the remote process found in relpath and pointer to the rest of relpath string
+ * (e.g. "42/cwd" returns 42 in `*pid_ptr` and pointer to "cwd" in `rest` if process 42 exists) */
+static int get_pid_from_relpath(const char* relpath, IDTYPE* pid_ptr, char** rest) {
+    if (*relpath == '\0' || *relpath == '/')
+        return -ENOENT;
 
-        pid = pid * 10 + *p - '0';
+    char* pid_end = NULL;
+    IDTYPE pid = (IDTYPE)strtol(relpath, &pid_end, /*base=*/10);
+
+    if (!pid_end || (*pid_end != '\0' && *pid_end != '/'))
+        return -ENOENT;
+
+    if (!create_lock_runtime(&g_pid_status_lock))
+        return -ENOMEM;
+
+    lock(&g_pid_status_lock);
+
+    if (!g_pid_status_cache.status_num || !g_pid_status_cache.status) {
+        unlock(&g_pid_status_lock);
+        return -ENOENT;
     }
 
-    if (next) {
-        if (*(p++) == '/' && *p) {
-            *next = p;
-
-            if (next_len || nextnext)
-                for (; *p && *p != '/'; p++)
-                    ;
-
-            if (next_len)
-                *next_len = p - *next;
-
-            if (nextnext)
-                *nextnext = (*(p++) == '/' && *p) ? p : NULL;
-        } else {
-            *next = NULL;
+    bool found_pid = false;
+    for (size_t i = 0; i < g_pid_status_cache.status_num; i++) {
+        if (g_pid_status_cache.status[i].pid == pid) {
+            found_pid = true;
+            break;
         }
     }
 
-    if (pidptr)
-        *pidptr = pid;
+    unlock(&g_pid_status_lock);
+
+    if (!found_pid)
+        return -ENOENT;
+
+    *pid_ptr = pid;
+    if (rest)
+        *rest = *pid_end == '\0' ? NULL : pid_end + 1;
     return 0;
 }
 
-static int find_ipc_thread_link(const char* name, struct shim_qstr* link,
-                                struct shim_dentry** dentptr) {
-    const char* next;
-    const char* nextnext;
-    size_t next_len;
-    IDTYPE pid;
+/* returns dentry corresponding to PID's "root"/"cwd"/"exe" in relpath (e.g. "[pid]/root")
+ * FIXME: currently only a stub because there is no shared multi-process file system in Graphene */
+static int get_ipc_genericlink_dentry(const char* relpath, struct shim_dentry** dent_ptr) {
+    int ret;
+    assert(dent_ptr);
 
-    int ret = parse_ipc_thread_name(name, &pid, &next, &next_len, &nextnext);
+    IDTYPE pid = 0;
+    char* rest = NULL;
+    ret = get_pid_from_relpath(relpath, &pid, &rest);
     if (ret < 0)
         return ret;
 
+    if (!rest)
+        return -ENOENT;
+
     struct shim_dentry* dent = NULL;
+
     enum pid_meta_code ipc_code;
-    void* ipc_data = NULL;
-
-    if (!memcmp(next, "root", next_len)) {
+    if (strstartswith(rest, "root")) {
         ipc_code = PID_META_ROOT;
-        goto do_ipc;
-    }
-
-    if (!memcmp(next, "cwd", next_len)) {
+    } else if (strstartswith(rest, "cwd")) {
         ipc_code = PID_META_CWD;
-        goto do_ipc;
-    }
-
-    if (!memcmp(next, "exe", next_len)) {
+    } else if (strstartswith(rest, "exe")) {
         ipc_code = PID_META_EXEC;
-        goto do_ipc;
+    } else {
+        return -ENOENT;
     }
 
-    ret = -ENOENT;
-    goto out;
-do_ipc:
+#if 0
+    /* this doesn't work because there is no shared multi-process file system in Graphene,
+     * thus path_lookupat() on a returned `ipc_data` path doesn't make much sense */
+    void* ipc_data = NULL;
     ret = ipc_pid_getmeta_send(pid, ipc_code, &ipc_data);
     if (ret < 0)
-        goto out;
+        return ret;
 
-    if (link)
-        qstrsetstr(link, (char*)ipc_data, strlen((char*)ipc_data));
-
-    if (dentptr) {
-        /* XXX: Not sure how to handle this case yet */
-        __abort();
-        ret = path_lookupat(NULL, (char*)ipc_data, 0, &dent, NULL);
-        if (ret < 0)
-            goto out;
-
-        get_dentry(dent);
-        *dentptr = dent;
+    ret = path_lookupat(NULL, (char*)ipc_data, 0, &dent, NULL);
+    if (ret < 0) {
+        free(ipc_data);
+        return ret;
     }
 
-out:
-    if (dent)
-        put_dentry(dent);
-    return ret;
+    free(ipc_data);
+    get_dentry(dent);
+#else
+    __UNUSED(pid);
+    __UNUSED(ipc_code);
+    __UNUSED(dent);
+    return -ENOENT;
+#endif
+
+    *dent_ptr = dent;
+    return 0;
 }
 
-static int proc_ipc_thread_link_open(struct shim_handle* hdl, const char* name, int flags) {
-    struct shim_dentry* dent;
+static int proc_ipc_thread_genericlink_open(struct shim_handle* hdl, const char* relpath,
+                                            int flags) {
+    int ret;
 
-    int ret = find_ipc_thread_link(name, NULL, &dent);
+    struct shim_dentry* dent = NULL;
+    ret = get_ipc_genericlink_dentry(relpath, &dent);
     if (ret < 0)
         return ret;
 
     if (!dent->fs || !dent->fs->d_ops || !dent->fs->d_ops->open) {
-        ret = -EACCES;
-        goto out;
+        put_dentry(dent);
+        return -EACCES;
     }
 
     ret = dent->fs->d_ops->open(hdl, dent, flags);
-out:
     put_dentry(dent);
     return 0;
 }
 
-static int proc_ipc_thread_link_mode(const char* name, mode_t* mode) {
-    struct shim_dentry* dent;
+static int proc_ipc_thread_genericlink_mode(const char* relpath, mode_t* mode) {
+    int ret;
 
-    int ret = find_ipc_thread_link(name, NULL, &dent);
+    struct shim_dentry* dent = NULL;
+    ret = get_ipc_genericlink_dentry(relpath, &dent);
     if (ret < 0)
         return ret;
 
     if (!dent->fs || !dent->fs->d_ops || !dent->fs->d_ops->mode) {
-        ret = -EACCES;
-        goto out;
+        put_dentry(dent);
+        return -EACCES;
     }
 
     ret = dent->fs->d_ops->mode(dent, mode);
-out:
     put_dentry(dent);
     return ret;
 }
 
-static int proc_ipc_thread_link_stat(const char* name, struct stat* buf) {
-    struct shim_dentry* dent;
+static int proc_ipc_thread_genericlink_stat(const char* relpath, struct stat* buf) {
+    int ret;
 
-    int ret = find_ipc_thread_link(name, NULL, &dent);
+    struct shim_dentry* dent = NULL;
+    ret = get_ipc_genericlink_dentry(relpath, &dent);
     if (ret < 0)
         return ret;
 
     if (!dent->fs || !dent->fs->d_ops || !dent->fs->d_ops->stat) {
-        ret = -EACCES;
-        goto out;
+        put_dentry(dent);
+        return -EACCES;
     }
 
     ret = dent->fs->d_ops->stat(dent, buf);
-out:
     put_dentry(dent);
     return ret;
 }
 
-static int proc_ipc_thread_link_follow_link(const char* name, struct shim_qstr* link) {
-    return find_ipc_thread_link(name, link, NULL);
-}
+static int proc_ipc_thread_genericlink_follow(const char* relpath, struct shim_qstr* link) {
+    int ret;
 
-static const struct pseudo_fs_ops fs_ipc_thread_link = {
-    .open        = &proc_ipc_thread_link_open,
-    .mode        = &proc_ipc_thread_link_mode,
-    .stat        = &proc_ipc_thread_link_stat,
-    .follow_link = &proc_ipc_thread_link_follow_link,
-};
+    struct shim_dentry* dent = NULL;
+    ret = get_ipc_genericlink_dentry(relpath, &dent);
+    if (ret < 0)
+        return ret;
 
-static struct pid_status_cache {
-    uint32_t ref_count;
-    bool dirty;
-    size_t nstatus;
-    struct pid_status* status;
-} * pid_status_cache;
-
-static struct shim_lock status_lock;
-
-static int proc_match_ipc_thread(const char* name) {
-    IDTYPE pid;
-    if (parse_ipc_thread_name(name, &pid, NULL, NULL, NULL) < 0)
-        return 0;
-
-    if (!create_lock_runtime(&status_lock)) {
+    if (!dentry_get_path_into_qstr(dent, link)) {
+        put_dentry(dent);
         return -ENOMEM;
     }
-    lock(&status_lock);
 
-    if (pid_status_cache)
-        for (size_t i = 0; i < pid_status_cache->nstatus; i++)
-            if (pid_status_cache->status[i].pid == pid) {
-                unlock(&status_lock);
-                return 1;
-            }
-
-    unlock(&status_lock);
+    put_dentry(dent);
     return 0;
 }
 
-static int proc_ipc_thread_dir_mode(const char* name, mode_t* mode) {
-    const char* next;
-    size_t next_len;
-    IDTYPE pid;
-    int ret = parse_ipc_thread_name(name, &pid, &next, &next_len, NULL);
+static const struct pseudo_fs_ops proc_ipc_thread_genericlink_fs_ops = {
+    .open        = &proc_ipc_thread_genericlink_open,
+    .mode        = &proc_ipc_thread_genericlink_mode,
+    .stat        = &proc_ipc_thread_genericlink_stat,
+    .follow_link = &proc_ipc_thread_genericlink_follow,
+};
+
+/* return 0 if prefix of relpath (in format "[pid]") is a valid PID, or negative error code
+ * otherwise */
+static int proc_match_ipc_thread(const char* relpath) {
+    IDTYPE dummy_pid;
+    return get_pid_from_relpath(relpath, &dummy_pid, /*rest=*/NULL);
+}
+
+/* return an array of dirents with all other-processes PIDs; also save it in g_pid_status_cache */
+static int proc_list_ipc_threads(const char* relpath, struct shim_dirent** buf, size_t size) {
+    __UNUSED(relpath);
+    int ret;
+
+    if (!create_lock_runtime(&g_pid_status_lock))
+        return -ENOMEM;
+
+    /* free previously cached list of PIDs; we always query all PIDs anew in this function */
+    lock(&g_pid_status_lock);
+    free(g_pid_status_cache.status);
+    g_pid_status_cache.status     = NULL;
+    g_pid_status_cache.status_num = 0;
+    unlock(&g_pid_status_lock);
+
+    struct pid_status* status = NULL;
+    ret = get_all_pid_status(&status);
     if (ret < 0)
         return ret;
 
-    if (!create_lock_runtime(&status_lock)) {
-        return -ENOMEM;
-    }
-    lock(&status_lock);
+    size_t status_num = ret;
+    size_t bytes = 0;
+    struct shim_dirent* dirent = *buf;
 
-    if (pid_status_cache)
-        for (size_t i = 0; i < pid_status_cache->nstatus; i++)
-            if (pid_status_cache->status[i].pid == pid) {
-                unlock(&status_lock);
-                *mode = PERM_r_x______;
-                return 0;
-            }
-
-    unlock(&status_lock);
-    return -ENOENT;
-}
-
-static int proc_ipc_thread_dir_stat(const char* name, struct stat* buf) {
-    const char* next;
-    size_t next_len;
-    IDTYPE pid;
-    int ret = parse_ipc_thread_name(name, &pid, &next, &next_len, NULL);
-    if (ret < 0)
-        return ret;
-
-    if (!create_lock_runtime(&status_lock)) {
-        return -ENOMEM;
-    }
-    lock(&status_lock);
-
-    if (pid_status_cache)
-        for (size_t i = 0; i < pid_status_cache->nstatus; i++)
-            if (pid_status_cache->status[i].pid == pid) {
-                memset(buf, 0, sizeof(struct stat));
-                buf->st_dev = buf->st_ino = 1;
-                buf->st_mode              = PERM_r_x______ | S_IFDIR;
-                buf->st_uid               = 0; /* XXX */
-                buf->st_gid               = 0; /* XXX */
-                buf->st_size              = 4096;
-                unlock(&status_lock);
-                return 0;
-            }
-
-    unlock(&status_lock);
-    return -ENOENT;
-}
-
-static int proc_list_ipc_thread(const char* name, struct shim_dirent** buf, int len) {
-    // Only one valid name
-    __UNUSED(name);
-    struct pid_status_cache* status = NULL;
-    int ret = 0;
-
-    if (!create_lock_runtime(&status_lock)) {
-        return -ENOMEM;
-    }
-
-    lock(&status_lock);
-    if (pid_status_cache && !pid_status_cache->dirty) {
-        status = pid_status_cache;
-        status->ref_count++;
-    }
-    unlock(&status_lock);
-
-    if (!status) {
-        status = malloc(sizeof(struct pid_status_cache));
-        if (!status)
-            return -ENOMEM;
-
-        ret = get_all_pid_status(&status->status);
-        if (ret < 0) {
-            free(status);
-            return ret;
-        }
-
-        status->nstatus   = ret;
-        status->ref_count = 1;
-        status->dirty     = false;
-
-        lock(&status_lock);
-        if (pid_status_cache) {
-            if (pid_status_cache->dirty) {
-                if (!pid_status_cache->ref_count)
-                    free(pid_status_cache);
-                pid_status_cache = status;
-            } else {
-                if (status->nstatus)
-                    free(status->status);
-                free(status);
-                status = pid_status_cache;
-                status->ref_count++;
-            }
-        } else {
-            pid_status_cache = status;
-        }
-        unlock(&status_lock);
-    }
-
-    if (!status->nstatus)
-        goto success;
-
-    struct shim_dirent* ptr = (*buf);
-    void* buf_end           = (void*)ptr + len;
-
-    for (size_t i = 0; i < status->nstatus; i++) {
-        if (status->status[i].pid != status->status[i].tgid)
+    for (size_t i = 0; i < status_num; i++) {
+        if (status[i].pid != status[i].tgid)
             continue;
 
-        IDTYPE pid = status->status[i].pid;
-        int p = pid, l = 0;
-        for (; p; p /= 10, l++)
-            ;
+        char pid_str[16];
+        ssize_t pid_str_size = snprintf(pid_str, sizeof(pid_str), "%u", status[i].pid) + 1;
 
-        if ((void*)(ptr + 1) + l + 1 > buf_end) {
-            ret = -ENOMEM;
-            goto err;
+        size_t total_dirent_size = sizeof(struct shim_dirent) + pid_str_size;
+        bytes += total_dirent_size;
+        if (bytes > size) {
+            free(status);
+            return -ENOMEM;
         }
 
-        ptr->next      = (void*)(ptr + 1) + l + 1;
-        ptr->ino       = 1;
-        ptr->type      = LINUX_DT_DIR;
-        ptr->name[l--] = 0;
-        for (p = pid; p; p /= 10) {
-            ptr->name[l--] = p % 10 + '0';
-        }
-
-        ptr = ptr->next;
+        dirent->next = (struct shim_dirent*)((char*)(dirent) + total_dirent_size);
+        dirent->ino  = 1;
+        dirent->type = LINUX_DT_DIR;
+        memcpy(dirent->name, pid_str, pid_str_size);
+        dirent = dirent->next;
     }
 
-    *buf = ptr;
-success:
-    lock(&status_lock);
-    status->dirty = true;
-    status->ref_count--;
-    if (!status->ref_count && status != pid_status_cache)
-        free(status);
-    unlock(&status_lock);
+    lock(&g_pid_status_lock);
+    g_pid_status_cache.status     = status;
+    g_pid_status_cache.status_num = status_num;
+    unlock(&g_pid_status_lock);
+
+    *buf = dirent; /* upon return, buf must point past all added entries */
     return 0;
-err:
-    lock(&status_lock);
-    status->ref_count--;
-    if (!status->ref_count && status != pid_status_cache)
-        free(status);
-    unlock(&status_lock);
-    return ret;
 }
 
-const struct pseudo_name_ops nm_ipc_thread = {
-    .match_name = &proc_match_ipc_thread,
-    .list_name  = &proc_list_ipc_thread,
+const struct pseudo_name_ops proc_ipc_thread_name_ops = {
+    .match_path   = &proc_match_ipc_thread,
+    .list_dirents = &proc_list_ipc_threads,
 };
 
-const struct pseudo_fs_ops fs_ipc_thread = {
+static int proc_ipc_thread_dir_open(struct shim_handle* hdl, const char* relpath, int flags) {
+    __UNUSED(hdl);
+    int ret;
+
+    IDTYPE pid = 0;
+    ret = get_pid_from_relpath(relpath, &pid, /*rest=*/NULL);
+    if (ret < 0)
+        return ret;
+
+    if (flags & (O_WRONLY | O_RDWR))
+        return -EISDIR;
+
+    return 0;
+}
+
+static int proc_ipc_thread_dir_mode(const char* relpath, mode_t* mode) {
+    int ret;
+
+    IDTYPE pid = 0;
+    ret = get_pid_from_relpath(relpath, &pid, /*rest=*/NULL);
+    if (ret < 0)
+        return ret;
+
+    *mode = PERM_r_x______;
+    return 0;
+}
+
+static int proc_ipc_thread_dir_stat(const char* relpath, struct stat* buf) {
+    int ret;
+
+    IDTYPE pid = 0;
+    ret = get_pid_from_relpath(relpath, &pid, /*rest=*/NULL);
+    if (ret < 0)
+        return ret;
+
+    memset(buf, 0, sizeof(struct stat));
+    buf->st_dev = 1;
+    buf->st_ino = 1;
+    buf->st_mode = PERM_r_x______ | S_IFDIR;
+    buf->st_uid = 0;
+    buf->st_gid = 0;
+    buf->st_size = 4096;
+    return 0;
+}
+
+const struct pseudo_fs_ops proc_ipc_thread_fs_ops = {
+    .open = &proc_ipc_thread_dir_open,
     .mode = &proc_ipc_thread_dir_mode,
     .stat = &proc_ipc_thread_dir_stat,
 };
 
-const struct pseudo_dir dir_ipc_thread = {
+const struct pseudo_dir proc_ipc_thread_dir = {
     .size = 3,
     .ent  = {
-        {.name = "cwd",  .fs_ops = &fs_ipc_thread_link, .type = LINUX_DT_LNK},
-        {.name = "exe",  .fs_ops = &fs_ipc_thread_link, .type = LINUX_DT_LNK},
-        {.name = "root", .fs_ops = &fs_ipc_thread_link, .type = LINUX_DT_LNK},
+        {.name = "cwd",  .fs_ops = &proc_ipc_thread_genericlink_fs_ops, .type = LINUX_DT_LNK},
+        {.name = "exe",  .fs_ops = &proc_ipc_thread_genericlink_fs_ops, .type = LINUX_DT_LNK},
+        {.name = "root", .fs_ops = &proc_ipc_thread_genericlink_fs_ops, .type = LINUX_DT_LNK},
     }
 };

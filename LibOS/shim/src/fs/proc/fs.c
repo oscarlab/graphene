@@ -2,42 +2,40 @@
 /* Copyright (C) 2014 Stony Brook University */
 
 /*!
- * \file
- *
  * This file contains the implementation of `/proc` pseudo-filesystem.
  */
 
 #include "shim_fs.h"
 
-extern const struct pseudo_name_ops nm_thread;
-extern const struct pseudo_fs_ops fs_thread;
-extern const struct pseudo_dir dir_thread;
+extern const struct pseudo_name_ops proc_thread_name_ops;
+extern const struct pseudo_fs_ops proc_thread_fs_ops;
+extern const struct pseudo_dir proc_thread_dir;
 
-extern const struct pseudo_name_ops nm_ipc_thread;
-extern const struct pseudo_fs_ops fs_ipc_thread;
-extern const struct pseudo_dir dir_ipc_thread;
+extern const struct pseudo_name_ops proc_ipc_thread_name_ops;
+extern const struct pseudo_fs_ops proc_ipc_thread_fs_ops;
+extern const struct pseudo_dir proc_ipc_thread_dir;
 
-extern const struct pseudo_fs_ops fs_meminfo;
+extern const struct pseudo_fs_ops proc_meminfo_fs_ops;
 
-extern const struct pseudo_fs_ops fs_cpuinfo;
+extern const struct pseudo_fs_ops proc_cpuinfo_fs_ops;
 
 static const struct pseudo_dir proc_root_dir = {
     .size = 5,
     .ent  = {
         {.name     = "self",
-         .fs_ops   = &fs_thread,
-         .dir      = &dir_thread},
-        {.name_ops = &nm_thread,
-         .fs_ops   = &fs_thread,
-         .dir      = &dir_thread},
-        {.name_ops = &nm_ipc_thread,
-         .fs_ops   = &fs_ipc_thread,
-         .dir      = &dir_ipc_thread},
+         .fs_ops   = &proc_thread_fs_ops,
+         .dir      = &proc_thread_dir},
+        {.name_ops = &proc_thread_name_ops,
+         .fs_ops   = &proc_thread_fs_ops,
+         .dir      = &proc_thread_dir},
+        {.name_ops = &proc_ipc_thread_name_ops,
+         .fs_ops   = &proc_ipc_thread_fs_ops,
+         .dir      = &proc_ipc_thread_dir},
         {.name     = "meminfo",
-         .fs_ops   = &fs_meminfo,
+         .fs_ops   = &proc_meminfo_fs_ops,
          .type     = LINUX_DT_REG},
         {.name     = "cpuinfo",
-         .fs_ops   = &fs_cpuinfo,
+         .fs_ops   = &proc_cpuinfo_fs_ops,
          .type     = LINUX_DT_REG},
     }};
 

@@ -483,8 +483,8 @@ extern struct shim_fs_ops proc_fs_ops;
 extern struct shim_d_ops proc_d_ops;
 
 struct pseudo_name_ops {
-    int (*match_name)(const char* name);
-    int (*list_name)(const char* name, struct shim_dirent** buf, int count);
+    int (*match_path)(const char* relpath);
+    int (*list_dirents)(const char* relpath, struct shim_dirent** buf, size_t size);
 };
 
 static inline dev_t makedev(unsigned int major, unsigned int minor) {

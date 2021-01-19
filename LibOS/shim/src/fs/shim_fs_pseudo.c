@@ -53,10 +53,16 @@ static int pseudo_findent(const char* path, const struct pseudo_ent* root_ent,
                 break;
             }
 
-            if (ent->name_ops && ent->name_ops->match_name && ent->name_ops->match_name(token)) {
-                /* directory entry has a calculated at runtime name (via match_name) that matches
-                 * current token: found ent */
-                break;
+            if (ent->name_ops && ent->name_ops->match_path) {
+                int ret = ent->name_ops->match_path(path);
+                if (ret == 0) {
+                    /* directory entry has a calculated at runtime name (via match_path) that
+                     * matches current path prefix (not just token!): found ent */
+                    break;
+                } else if (ret != -ENOENT) {
+                    /* actual failure in match_path() */
+                    return ret;
+                }
             }
         }
 
@@ -104,10 +110,10 @@ static int populate_dirent(const char* path, const struct pseudo_dir* dir, struc
             dirent_in_buf->type = ent->dir ? LINUX_DT_DIR : ent->type;
 
             dirent_in_buf = dirent_in_buf->next;
-        } else if (ent->name_ops && ent->name_ops->list_name) {
-            /* directory entry has a list of entries calculated at runtime (via list_name) */
+        } else if (ent->name_ops && ent->name_ops->list_dirents) {
+            /* directory entry has a list of entries calculated at runtime (via list_dirents) */
             struct shim_dirent* old_dirent_in_buf = dirent_in_buf;
-            int ret = ent->name_ops->list_name(path, &dirent_in_buf, buf_size - total_size);
+            int ret = ent->name_ops->list_dirents(path, &dirent_in_buf, buf_size - total_size);
             if (ret < 0)
                 return ret;
 

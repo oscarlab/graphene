@@ -2,8 +2,6 @@
 /* Copyright (C) 2014 Stony Brook University */
 
 /*!
- * \file
- *
  * This file contains the implementation of `/proc/meminfo` and `/proc/cpuinfo`.
  */
 
@@ -179,13 +177,13 @@ static int proc_cpuinfo_open(struct shim_handle* hdl, const char* name, int flag
     return 0;
 }
 
-struct pseudo_fs_ops fs_meminfo = {
+struct pseudo_fs_ops proc_meminfo_fs_ops = {
     .mode = &proc_info_mode,
     .stat = &proc_info_stat,
     .open = &proc_meminfo_open,
 };
 
-struct pseudo_fs_ops fs_cpuinfo = {
+struct pseudo_fs_ops proc_cpuinfo_fs_ops = {
     .mode = &proc_info_mode,
     .stat = &proc_info_stat,
     .open = &proc_cpuinfo_open,
