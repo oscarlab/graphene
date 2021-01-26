@@ -1,3 +1,2 @@
-/toml.c
-/toml.h
-/toml.patched
+/toml.c*
+/toml.h*
