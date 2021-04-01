@@ -29,7 +29,7 @@ loader.insecure__use_cmdline_argv = 1
 # paths must be taken from fs.mount.xxx.path, not fs.mount.xxx.uri).
 #
 # In case of Redis:
-# - /lib is searched for Glibc libraries (ld, libc, libpthread)
+# - /lib is searched for libc libraries (ld, libc, libpthread)
 # - $(ARCH_LIBDIR) is searched for Name Service Switch (NSS) libraries
 loader.env.LD_LIBRARY_PATH = "/lib:$(ARCH_LIBDIR):/usr/$(ARCH_LIBDIR)"
 
@@ -47,7 +47,7 @@ sys.enable_sigterm_injection = 1
 # - In-Graphene visible path names may be arbitrary but we reuse host-OS URIs
 #   for simplicity (except for the first 'lib' case).
 
-# Mount host-OS directory to Graphene glibc/runtime libraries (in 'uri') into
+# Mount host-OS directory to Graphene libc/runtime libraries (in 'uri') into
 # in-Graphene visible directory /lib (in 'path'). Note that GRAPHENEDIR macro
 # is expanded to relative path to Graphene repository in the Makefile as part
 # of the build process.

@@ -1,10 +1,19 @@
-#define _XOPEN_SOURCE 700
+#define _GNU_SOURCE
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+static long inline_stat(const char* filename, struct stat* statbuf) {
+    return syscall(SYS_stat, filename, statbuf);
+}
+
+static long inline_lstat(const char* filename, struct stat* statbuf) {
+    return syscall(SYS_lstat, filename, statbuf);
+}
 
 int main(int argc, char** argv) {
     int r;
@@ -17,22 +26,22 @@ int main(int argc, char** argv) {
     struct stat* badbuf  = (void*)-1;
 
     /* check stat() */
-    r = stat(badpath, goodbuf);
+    r = inline_stat(badpath, goodbuf);
     if (r == -1 && errno == EFAULT)
-        printf("stat(invalid-path-ptr) correctly returned error\n");
+        puts("stat(invalid-path-ptr) correctly returned error");
 
-    r = stat(goodpath, badbuf);
+    r = inline_stat(goodpath, badbuf);
     if (r == -1 && errno == EFAULT)
-        printf("stat(invalid-buf-ptr) correctly returned error\n");
+        puts("stat(invalid-buf-ptr) correctly returned error");
 
     /* check lstat() */
-    r = lstat(badpath, goodbuf);
+    r = inline_lstat(badpath, goodbuf);
     if (r == -1 && errno == EFAULT)
-        printf("lstat(invalid-path-ptr) correctly returned error\n");
+        puts("lstat(invalid-path-ptr) correctly returned error");
 
-    r = lstat(goodpath, badbuf);
+    r = inline_lstat(goodpath, badbuf);
     if (r == -1 && errno == EFAULT)
-        printf("lstat(invalid-buf-ptr) correctly returned error\n");
+        puts("lstat(invalid-buf-ptr) correctly returned error");
 
     return 0;
 }

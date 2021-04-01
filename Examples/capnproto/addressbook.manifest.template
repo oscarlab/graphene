@@ -17,7 +17,7 @@ loader.insecure__use_cmdline_argv = 1
 # Specify paths to search for libraries (usual LD_LIBRARY_PATH syntax)
 loader.env.LD_LIBRARY_PATH = "/lib:$(ARCH_LIBDIR):/usr/$(ARCH_LIBDIR)"
 
-# Mount host-OS directory to Graphene glibc/runtime libraries
+# Mount host-OS directory to Graphene libc/runtime libraries
 fs.mount.lib.type = "chroot"
 fs.mount.lib.path = "/lib"
 fs.mount.lib.uri = "file:$(GRAPHENEDIR)/Runtime"

@@ -898,7 +898,7 @@ int init_brk_from_executable(struct shim_handle* exec) {
 }
 
 int register_library(const char* name, unsigned long load_address) {
-    log_debug("glibc register library %s loaded at 0x%08lx\n", name, load_address);
+    log_debug("libc register library %s loaded at 0x%08lx\n", name, load_address);
 
     struct shim_handle* hdl = get_new_handle();
 
@@ -945,32 +945,34 @@ noreturn void execute_elf_object(struct shim_handle* exec, void* argp, ElfW(auxv
      */
     assert(IS_ALIGNED_PTR(argp, 16)); /* stack must be 16B-aligned */
 
-    static_assert(REQUIRED_ELF_AUXV >= 8, "not enough space on stack for auxv");
+    static_assert(REQUIRED_ELF_AUXV >= 9, "not enough space on stack for auxv");
     auxp[0].a_type     = AT_PHDR;
     auxp[0].a_un.a_val = (__typeof(auxp[0].a_un.a_val))exec_map->l_phdr;
     auxp[1].a_type     = AT_PHNUM;
     auxp[1].a_un.a_val = exec_map->l_phnum;
-    auxp[2].a_type     = AT_PAGESZ;
-    auxp[2].a_un.a_val = g_pal_alloc_align;
-    auxp[3].a_type     = AT_ENTRY;
-    auxp[3].a_un.a_val = exec_map->l_entry;
-    auxp[4].a_type     = AT_BASE;
-    auxp[4].a_un.a_val = interp_map ? interp_map->l_addr : 0;
-    auxp[5].a_type     = AT_RANDOM;
-    auxp[5].a_un.a_val = 0; /* filled later */
+    auxp[2].a_type     = AT_PHENT;
+    auxp[2].a_un.a_val = sizeof(ElfW(Phdr));
+    auxp[3].a_type     = AT_PAGESZ;
+    auxp[3].a_un.a_val = g_pal_alloc_align;
+    auxp[4].a_type     = AT_ENTRY;
+    auxp[4].a_un.a_val = exec_map->l_entry;
+    auxp[5].a_type     = AT_BASE;
+    auxp[5].a_un.a_val = interp_map ? interp_map->l_addr : 0;
+    auxp[6].a_type     = AT_RANDOM;
+    auxp[6].a_un.a_val = 0; /* filled later */
     if (vdso_addr) {
-        auxp[6].a_type     = AT_SYSINFO_EHDR;
-        auxp[6].a_un.a_val = (uint64_t)vdso_addr;
+        auxp[7].a_type     = AT_SYSINFO_EHDR;
+        auxp[7].a_un.a_val = (uint64_t)vdso_addr;
     } else {
-        auxp[6].a_type     = AT_NULL;
-        auxp[6].a_un.a_val = 0;
+        auxp[7].a_type     = AT_NULL;
+        auxp[7].a_un.a_val = 0;
     }
-    auxp[7].a_type     = AT_NULL;
-    auxp[7].a_un.a_val = 0;
+    auxp[8].a_type     = AT_NULL;
+    auxp[8].a_un.a_val = 0;
 
     /* populate extra memory space for aux vector data */
     static_assert(REQUIRED_ELF_AUXV_SPACE >= 16, "not enough space on stack for auxv");
-    ElfW(Addr) auxp_extra = (ElfW(Addr))&auxp[8];
+    ElfW(Addr) auxp_extra = (ElfW(Addr))&auxp[9];
 
     ElfW(Addr) random = auxp_extra; /* random 16B for AT_RANDOM */
     ret = DkRandomBitsRead((PAL_PTR)random, 16);
@@ -979,7 +981,7 @@ noreturn void execute_elf_object(struct shim_handle* exec, void* argp, ElfW(auxv
         DkProcessExit(1);
         /* UNREACHABLE */
     }
-    auxp[5].a_un.a_val = random;
+    auxp[6].a_un.a_val = random;
 
     ElfW(Addr) entry = interp_map ? interp_map->l_entry : exec_map->l_entry;
 

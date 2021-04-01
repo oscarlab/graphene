@@ -14,17 +14,17 @@ Graphene consists of several components:
 - The Library OS itself (a shared library named ``libsysdb.so``, called the
   "shim" in our source code)
 - The Platform Adaptation Layer, or PAL (a shared library named ``libpal.so``)
-- A patched GNU C Library (a set of shared libraries ``libc.so``,
+- A patched glibc or musl library (a set of shared libraries ``libc.so``,
   ``libpthread.so``, ``libm.so``, etc.)
 
 The build of Graphene implies building at least the first two components. The
 build of the patched C library is optional but highly recommended for
-performance reasons. The patched C library is built by default.
+performance reasons. Patched glibc is built by default.
 
 Graphene currently only works on the x86_64 architecture. Graphene is currently
 tested on Ubuntu 16.04 and 18.04 (both server and desktop version), along with
-Linux kernel versions 3.x/4.x/5.x. We recommend building and installing Graphene
-on the same host platform. If you find problems with Graphene on other Linux
+Linux kernel versions 4.x/5.x. We recommend building and installing Graphene on
+the same host platform. If you find problems with Graphene on other Linux
 distributions, please contact us with a |~| detailed `bug report
 <https://github.com/oscarlab/graphene/issues/new>`__.
 
@@ -198,6 +198,13 @@ Running :command:`make SGX=1 sgx-tokens` in the test or regression directory
 will automatically generate the required manifest signatures (``.sig`` files)
 and EINITTOKENs (``.token`` files).
 
+Building with musl instead of glibc
+-----------------------------------
+
+To build with a patched musl, add ``LIBC=MUSL`` to the ``make`` invocation.
+You'll need to run :command:`make clean` in ``Runtime/`` directory if you
+already have Graphene built with glibc.
+
 Additional build options
 ------------------------
 
@@ -207,8 +214,8 @@ Additional build options
 
 - To build with ``-Werror``, run :command:`make WERROR=1`.
 
-- To specify custom mirrors for downloading the Glibc source, use :command:`make
-  GLIBC_MIRRORS=...`.
+- To specify custom mirrors for downloading the glibc source, use :command:`make
+  GLIBC_MIRRORS=...` (and MUSL_MIRRORS for musl).
 
 - Each part of Graphene can be built separately in the subdirectories. For
   example, to build only the Pal component, use :command:`make -c Pal`.

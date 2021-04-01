@@ -19,7 +19,7 @@ loader.insecure__use_host_env = 1
 # Overwrite some environment variables
 loader.env.LD_LIBRARY_PATH = "/lib:/usr/lib:$(ARCH_LIBDIR):/usr/$(ARCH_LIBDIR)"
 
-# Default glibc files, mounted from the Runtime directory in GRAPHENEDIR
+# Default libc files, mounted from the Runtime directory in GRAPHENEDIR
 fs.mount.lib.type = "chroot"
 fs.mount.lib.path = "/lib"
 fs.mount.lib.uri = "file:$(GRAPHENEDIR)/Runtime/"

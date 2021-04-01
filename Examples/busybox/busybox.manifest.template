@@ -31,7 +31,7 @@ loader.log_level = "$(GRAPHENE_LOG_LEVEL)"
 # fs.mount.xxx.path, not fs.mount.xxx.uri).
 #
 # In case of Busybox:
-# - /lib is searched for Glibc libraries (ld, libc, libresolv) provided by
+# - /lib is searched for libc libraries (ld, libc, libresolv) provided by
 #   graphene,
 # - $(ARCH_LIBDIR) is searched for libcrypt, NSS libraries.
 loader.env.LD_LIBRARY_PATH = "/lib:$(ARCH_LIBDIR)"
@@ -51,7 +51,7 @@ loader.env.HOSTNAME = "test"
 # - Names of mount entries (lib1, lib2) are irrelevant but must be unique.
 # - In-Graphene visible path names may be arbitrary.
 
-# Mount host-OS directory containing Graphene glibc/runtime libraries
+# Mount host-OS directory containing Graphene libc/runtime libraries
 # (specified as 'uri', GRAPHENEDIR macro is expanded in the Makefile as part
 # of the build process) into in-Graphene visible directory /lib (specified
 # as 'path').

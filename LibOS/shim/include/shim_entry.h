@@ -4,7 +4,7 @@
  */
 
 /*
- * This file describes Graphene's entrypoints from userspace (mostly from patched glibc).
+ * This file describes Graphene's entrypoints from userspace (mostly from patched libc).
  */
 
 #ifndef SHIM_ENTRY_H_

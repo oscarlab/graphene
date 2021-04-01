@@ -3,6 +3,10 @@
 /glibc-build/
 /build.log
 
+/musl-*.*.*.tar.gz
+/musl-*.*.*/
+/musl-build/
+
 /gcc-*.tar.gz
 /gcc-*.*.*/
 /gcc-build/

@@ -10,6 +10,7 @@ import unittest
 
 HAS_SGX = os.environ.get('SGX') == '1'
 ON_X86 = os.uname().machine in ['x86_64']
+USES_MUSL = os.environ.get('LIBC') == 'MUSL'
 
 def expectedFailureIf(predicate):
     if predicate:

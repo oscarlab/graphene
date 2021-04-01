@@ -9,7 +9,7 @@ commands
   backtrace
   echo <backtrace 1 end>\n\n
 
-  # Check if we can break inside PAL and get a full backtrace (across glibc).
+  # Check if we can break inside PAL and get a full backtrace (across libc).
 
   tbreak dev_write
   commands

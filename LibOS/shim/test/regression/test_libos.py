@@ -10,6 +10,7 @@ import unittest
 from regression import (
     HAS_SGX,
     ON_X86,
+    USES_MUSL,
     RegressionTestCase,
 )
 
@@ -102,6 +103,7 @@ class TC_01_Bootstrap(RegressionTestCase):
         self.assertIn('Local Address in Executable: 0x', stdout)
         self.assertIn('argv[0] = bootstrap_pie', stdout)
 
+    @unittest.skipIf(USES_MUSL, 'musl doesn\'t contain libstdc++.so')
     def test_110_basic_bootstrapping_cpp(self):
         stdout, _ = self.run_binary(['bootstrap_cpp'])
         self.assertIn('User Program Started', stdout)
@@ -254,6 +256,7 @@ class TC_01_Bootstrap(RegressionTestCase):
     'This test is only meaningful on SGX PAL because only SGX catches raw '
     'syscalls and redirects to Graphene\'s LibOS. If we will add seccomp to '
     'Linux PAL, then we should allow this test on Linux PAL as well.')
+@unittest.skipIf(USES_MUSL, 'musl seems to be incompatible with Ubuntu\'s libgomp.so')
 class TC_02_OpenMP(RegressionTestCase):
     def test_000_simple_for_loop(self):
         stdout, _ = self.run_binary(['openmp'])
@@ -481,6 +484,7 @@ class TC_30_Syscall(RegressionTestCase):
         self.assertIn('eventfd_using_various_flags completed successfully', stdout)
         self.assertIn('eventfd_using_fork completed successfully', stdout)
 
+    @unittest.skipIf(USES_MUSL, 'musl doesn\'t implement scheduling APIs')
     def test_080_sched(self):
         stdout, _ = self.run_binary(['sched'])
 
@@ -578,7 +582,7 @@ class TC_40_FileSystem(RegressionTestCase):
         self.assertIn('/proc/cpuinfo, type: {0}'.format(DT_REG), stdout)
         self.assertIn('symlink /proc/self/exec resolves to /proc_common', stdout)
         self.assertIn('/proc/2/cwd/proc_common.c', stdout)
-        self.assertIn('/lib/libpthread.so', stdout)
+        self.assertIn(' 00:00 0 /proc_common', stdout) # from /proc/<pid>/maps
         self.assertIn('stack', stdout)
         self.assertIn('vendor_id', stdout)
 
@@ -617,6 +621,8 @@ class TC_40_FileSystem(RegressionTestCase):
         stdout, _ = self.run_binary(['str_close_leak'], timeout=60)
         self.assertIn("Success", stdout)
 
+    @unittest.skipIf(USES_MUSL, 'musl is missing gnu_dev_minor and gnu_dev_major symbols if the '
+                                'binaries weren\'t built against musl headers')
     def test_050_sysfs(self):
         stdout, _ = self.run_binary(['sysfs_common'])
         self.assertIn('TEST OK', stdout)
