@@ -3,7 +3,7 @@ all:
 
 .PHONY: clean
 clean:
-	$(RM) *.a *.o *.so *.so.* pal-*
+	$(RM) *.a *.o *.so *.so.* pal-* .compiler-options
 
 .PHONY: distclean
 distclean: clean

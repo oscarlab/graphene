@@ -39,7 +39,7 @@ CFLAGS += -Wno-address-of-packed-member
 ASFLAGS += -Wa,--noexecstack -x assembler-with-cpp -I../include -I../include/arch/$(ARCH)
 
 LDFLAGS += -shared -nostdlib -z combreloc -z relro -z now -z defs \
-	  -rpath-link=$(abspath $(RUNTIME_DIR))
+	  -rpath-link=$(abspath $(RUNTIME_DIR)) $(UBSAN_LDFLAGS)
 
 files_to_build = libsysdb.a libsysdb.so
 files_to_install = $(addprefix $(RUNTIME_DIR)/,$(files_to_build))

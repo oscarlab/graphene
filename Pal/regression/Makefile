@@ -111,7 +111,7 @@ $(preloads): %.so: %.c $(LDLIBS-preloads)
 
 LDLIBS-executables = ../crt_init/user_start.o $(graphene_lib) $(pal_lib) $(preloads) abort.o
 $(executables): %: %.c $(LDLIBS-executables)
-	$(call cmd,csingle) -no-pie $(LDLIBS-executables)
+	$(call cmd,csingle) -no-pie $(LDLIBS-executables) $(UBSAN_LDFLAGS)
 
 pal_loader:
 	ln -s ../../Runtime/pal_loader $@

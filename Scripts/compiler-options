@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+DIR=$(dirname "$0")
+
+enable_ubsan() {
+	local runtimedir="$1"
+	local libdir="$2"
+
+	local out src
+	local libubsan="${libdir}/libubsan.so"
+	local compiler_opts="${runtimedir}/.compiler-options"
+
+	if [ -z "${libdir}" ]; then
+		echo "Missing libdir parameter."
+		return 1
+	fi
+
+	if [ -z "${runtimedir}" ]; then
+		echo "Missing runtimedir parameter."
+		return 1
+	fi
+
+	out=$(readlink -f "${libubsan}" 2>&1)
+	if [ $? -ne 0 ]; then
+		echo "Error: Could not find libubsan at ${libubsan}." >&2
+		echo "${out}" >&2
+		return 1
+	fi
+
+	cp ${out} "${runtimedir}/libubsan.so"
+	cp ${out} "${runtimedir}/$(basename $(readlink "${libubsan}"))"
+	# Copy over all known dependencies that Graphene's glibc won't build
+	for dep in libstdc++ libgcc_s; do
+		src="$(ldd ${libubsan} | grep ${dep} | gawk '{print $3}')"
+		cp "${src}" "${runtimedir}/$(basename "${src}")"
+	done
+
+	touch "${compiler_opts}"
+	if [ -z "$(grep ubsan "${compiler_opts}")" ]; then
+		echo "ubsan" >> "${compiler_opts}"
+	fi
+
+	return 0
+}
+
+is_ubsan_enabled() {
+	local runtimedir="$1"
+	local compiler_opts="${runtimedir}/.compiler-options"
+
+	if [ -z "${runtimedir}" ]; then
+		echo "Missing runtimedir parameter."
+		return 1
+	fi
+
+	if [ -n "$(grep -E "^ubsan$" "${compiler_opts}" 2>/dev/null)" ]; then
+		echo "1"
+	else
+		echo "0"
+	fi
+	return 0
+}
+
+usage() {
+	cat <<_EOF_
+Usage: $0 command [options]
+
+Valid commands are:
+enable-ubsan        : Enable ubsan
+is-ubsan-enabled    : Check whether UBSAN is enabled; prints '1' if yes,
+                      '0' otherwise
+
+--runtimedir <dir>  : Path to the Runtime dir
+--libdir <dir>      : Directory where libraries such as libubsan can be found
+
+--help|-h|-?        : Display this help screen and exit
+
+_EOF_
+}
+
+main() {
+	local runtimedir libdir cmd
+
+	cmd="$1"
+	shift
+
+	while [ $# -ne 0 ]; do
+		case $1 in
+		--runtimedir) shift 1; runtimedir="$1";;
+		--libdir) shift 1; libdir="$1";;
+		--help|-h|-?) usage "$0"; exit 0;;
+		*) echo "Unkown option $1." >&2; exit 1;;
+		esac
+		shift
+	done
+
+	case "$cmd" in
+	enable-ubsan)
+		enable_ubsan "${runtimedir}" "${libdir}"
+		;;
+	is-ubsan-enabled)
+		is_ubsan_enabled "${runtimedir}"
+		;;
+	*)
+		echo "Unsupported command '${cmd}'." >&2;
+		exit 1
+		;;
+	esac
+
+	exit $?
+}
+
+main "$@"

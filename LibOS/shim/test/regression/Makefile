@@ -3,17 +3,19 @@ include ../../../../Scripts/Makefile.configs
 c_executables-x86_64 = \
 	attestation \
 	cpuid \
-	debug_regs-x86_64 \
 	rdtsc \
 	sighandler_divbyzero
+
+ifneq ($(IS_UBSAN_ENABLED),1)
+c_executables-x86_64 += \
+	debug_regs-x86_64
+endif
 
 c_executables = \
 	abort \
 	abort_multithread \
 	bootstrap \
 	bootstrap_pie \
-	bootstrap_static \
-	debug \
 	dev \
 	device \
 	double_fork \
@@ -91,7 +93,13 @@ c_executables = \
 	vfork_and_exec \
 	$(c_executables-$(ARCH))
 
+ifneq ($(IS_UBSAN_ENABLED),1)
+c_executables += \
+	bootstrap_static \
+	debug
+
 cxx_executables = bootstrap_cpp
+endif
 
 repo_manifests = \
 	argv_from_file.manifest \
