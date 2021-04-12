@@ -1,8 +1,8 @@
 .. program:: ias_request
 
-==================================================================
-:program:`ias_request` -- Submit Intel Attestation Service request
-==================================================================
+=====================================================================
+:program:`ias_request` -- Submit Intel Attestation Service v3 request
+=====================================================================
 
 Synopsis
 ========
@@ -12,9 +12,9 @@ Synopsis
 Description
 ===========
 
-`ias_request` submits requests to Intel Attestation Service (IAS).
-Possible commands are retrieving EPID signature revocation list and verifying
-attestation evidence for an SGX enclave quote.
+`ias_request` submits requests to Intel Attestation Service (IAS) using
+(obsolete) v3 API. Possible commands are retrieving EPID signature revocation
+list and verifying attestation evidence for an SGX enclave quote.
 
 Command line arguments
 ======================

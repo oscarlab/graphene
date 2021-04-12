@@ -149,8 +149,9 @@ man_pages = [
     ('manpages/gsc', 'gsc', 'Graphene Shielded Containers', [author], 1),
     ('manpages/is_sgx_available', 'is_sgx_available', 'Check SGX compatibility', [author], 1),
     ('manpages/quote_dump', 'quote_dump', 'Display SGX quote', [author], 1),
-    ('manpages/ias_request', 'ias_request', 'Submit Intel Attestation Service request', [author], 1),
+    ('manpages/ias_request', 'ias_request', 'Submit Intel Attestation Service v3 request', [author], 1),
     ('manpages/verify_ias_report', 'verify_ias_report', 'Verify Intel Attestation Service report', [author], 1),
+    ('manpages/graphene-ias-query', 'graphene-ias-query', 'Query Intel Attestation Service API v4', [author], 1),
 ]
 
 # barf if a page is not included

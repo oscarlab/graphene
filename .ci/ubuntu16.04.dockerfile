@@ -43,12 +43,14 @@ RUN apt-get update \
        python \
        python3-apport \
        python3-apt \
-       python3-pyelftools \
+       python3-click \
        python3-lxml \
        python3-minimal \
        python3-numpy \
        python3-pip \
+       python3-pyelftools \
        python3-pytest \
+       python3-requests \
        python3-scipy \
        r-base-core \
        shellcheck \
