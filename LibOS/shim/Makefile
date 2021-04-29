@@ -4,7 +4,7 @@ MAKEFLAGS += --check-symlink-times
 
 .PHONY: all
 all:
-	$(MAKE) -C src
+	$(MAKE) -C src $@
 
 .PHONY: test
 test:

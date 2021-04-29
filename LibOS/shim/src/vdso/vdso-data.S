@@ -4,7 +4,7 @@
 	.type vdso_so, @object
 	.align 4
 vdso_so:
-	.incbin "vdso/vdso.so"
+	.incbin VDSO_SO_FULL_PATH
 
 	.global vdso_so_end
 	.type vdso_so_end, @object

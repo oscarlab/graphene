@@ -8,6 +8,7 @@ stage('build') {
         sh '''
             meson build \
                 --prefix="$PREFIX" \
+                --buildtype="$BUILDTYPE" \
                 -Ddirect=enabled \
                 -Dsgx=disabled
             ninja -C build

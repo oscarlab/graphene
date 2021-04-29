@@ -1,1 +1,2 @@
 env.DEBUG = '1'
+env.BUILDTYPE = 'debug'
