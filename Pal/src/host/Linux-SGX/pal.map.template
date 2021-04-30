@@ -1,4 +1,4 @@
 PAL {
-    global: $(PAL_SYMBOLS)
+    global: @PAL_SYMBOLS@
     local: *;
 };
