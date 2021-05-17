@@ -1,19 +1,32 @@
 #include <asm/errno.h>
 #include <stddef.h>
 
+#include <graphene-config.h>
 #include "ecall_types.h"
 #include "generated-offsets-build.h"
+#include "gsgx.h"
 #include "ocall_types.h"
 #include "pal.h"
-#include "pal_linux.h"
 #include "pal_linux_defs.h"
 #include "pal_security.h"
 #include "sgx_arch.h"
 #include "sgx_tls.h"
 
-#include "gsgx.h"
-
 __attribute__((__used__)) static void dummy(void) {
+    /* graphene-config.h */
+#ifdef CONFIG_SGX_DRIVER_UPSTREAM
+    DEFINE(CONFIG_SGX_DRIVER_UPSTREAM, 1);
+#endif
+#ifdef CONFIG_SGX_DRIVER_DCAP_1_6
+    DEFINE(CONFIG_SGX_DRIVER_DCAP_1_6, 1);
+#endif
+#ifdef CONFIG_SGX_DRIVER_DCAP_1_10
+    DEFINE(CONFIG_SGX_DRIVER_DCAP_1_10, 1);
+#endif
+#ifdef CONFIG_SGX_DRIVER_OOT
+    DEFINE(CONFIG_SGX_DRIVER_OOT, 1);
+#endif
+
     /* defines in sgx_arch.h */
     DEFINE(SGX_FLAGS_DEBUG, SGX_FLAGS_DEBUG);
     DEFINE(SGX_FLAGS_MODE64BIT, SGX_FLAGS_MODE64BIT);
@@ -178,9 +191,4 @@ __attribute__((__used__)) static void dummy(void) {
     OFFSET_T(XSAVE_HEADER_OFFSET, PAL_XREGS_STATE, header);
     DEFINE(PAL_XSTATE_ALIGN, PAL_XSTATE_ALIGN);
     DEFINE(PAL_FP_XSTATE_MAGIC2_SIZE, PAL_FP_XSTATE_MAGIC2_SIZE);
-
-    /* SGX_DCAP */
-#ifdef SGX_DCAP
-    DEFINE(SGX_DCAP, SGX_DCAP);
-#endif
 }

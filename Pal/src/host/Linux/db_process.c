@@ -35,6 +35,16 @@
  */
 #include <sys/wait.h>
 
+#ifdef DEBUG
+#define ARCH_VFORK()                                                                 \
+    (g_linux_state.in_gdb                                                            \
+         ? INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL) \
+         : INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK, 0, NULL, NULL))
+#else
+# define ARCH_VFORK()                                                       \
+    (INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK, 0, NULL, NULL))
+#endif
+
 extern char* g_pal_loader_path;
 extern char* g_libpal_path;
 

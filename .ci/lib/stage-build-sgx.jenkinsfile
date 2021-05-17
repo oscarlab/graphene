@@ -1,37 +1,50 @@
 stage('build') {
     sh '''
-        cd Pal/src/host/Linux-SGX/signer/ && openssl genrsa -3 -out enclave-key.pem 3072
-
-        cd /opt/intel
-        git clone https://github.com/intel/linux-sgx-driver.git
-        cd linux-sgx-driver
-        git checkout 276c5c6a064d22358542f5e0aa96b1c0ace5d695
+        openssl genrsa -3 -out Pal/src/host/Linux-SGX/signer/enclave-key.pem 3072
     '''
 
+    /*
+     * no need to install, we only need the SGX header file (sgx_oot.h)
+     * test the build with the DCAP driver v1.6 and clean up afterwards
+     */
     sh '''
         cd /opt/intel
         git clone https://github.com/intel/SGXDataCenterAttestationPrimitives.git
-        cd SGXDataCenterAttestationPrimitives
-        git checkout DCAP_1.6
-        # no need to build, we only need the SGX header file (sgx_oot.h)
-        # test the build with the DCAP driver v1.6 and clean up afterwards
-
-        cd "$WORKSPACE"
-        make ${MAKEOPTS} ISGX_DRIVER_PATH=/opt/intel/SGXDataCenterAttestationPrimitives/driver/linux
-        make ${MAKEOPTS} clean
+        git -C SGXDataCenterAttestationPrimitives checkout DCAP_1.6
     '''
 
     sh '''
-        make ${MAKEOPTS} ISGX_DRIVER_PATH=/opt/intel/linux-sgx-driver
+        make -C LibOS
     '''
 
+    try {
+        sh '''
+            meson setup build-dcap \
+                --prefix="$PREFIX" \
+                --buildtype="$BUILDTYPE" \
+                -Ddirect=disabled \
+                -Dsgx=enabled \
+                -Dsgx_driver=dcap1.6
+            ninja -vC build-dcap
+        '''
+    } finally {
+        archiveArtifacts 'build-dcap/meson-logs/**/*'
+        sh 'rm -rf build-dcap'
+    }
+
+    sh '''
+        cd /opt/intel
+        git clone https://github.com/intel/linux-sgx-driver.git
+        git -C linux-sgx-driver checkout 276c5c6a064d22358542f5e0aa96b1c0ace5d695
+    '''
     try {
         sh '''
             meson setup build \
                 --prefix="$PREFIX" \
                 --buildtype="$BUILDTYPE" \
                 -Ddirect=disabled \
-                -Dsgx=enabled
+                -Dsgx=enabled \
+                -Dsgx_driver=oot
             ninja -vC build
             ninja -vC build install
         '''
@@ -45,7 +58,4 @@ stage('build') {
     ''').trim() + '/graphene'
 
     sh 'rm -rf build'
-
-    // prevent cheating and testing from repo
-    sh 'make ${MAKEOPTS} -C Runtime clean'
 }

@@ -7,9 +7,6 @@ pal_skeleton_map = custom_target('pal.map[skeleton]',
     output: 'pal.map',
 )
 
-libgraphene_pal_skeleton = cc.find_library('graphene-lib',
-    dirs: join_paths(meson.current_source_dir(), '.lib'))
-
 # TODO after meson>=0.46 change this to both_libraries
 foreach target_type : ['shared_library', 'static_library']
     target = build_target('pal-skeleton',
@@ -61,7 +58,7 @@ foreach target_type : ['shared_library', 'static_library']
         ],
 
         dependencies: [
-            libgraphene_pal_skeleton,
+            common_dep,
         ],
 
         install: true,

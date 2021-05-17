@@ -4,5 +4,4 @@ includes_pal_common = [
         'pal',
         join_paths('arch', host_machine.cpu_family()),
     ),
-    includes_common,
 ]

@@ -3,13 +3,17 @@
  *               2020, Intel Labs.
  */
 
+#define _GNU_SOURCE
+
 #include <asm/errno.h>
 #include <linux/un.h>
 #include <stdbool.h>
+#include <sys/socket.h>
+#include <sys/mman.h>
 
+#include "aesm.pb-c.h"
 #include "gsgx.h"
 #include "linux_utils.h"
-#include "quote/aesm.pb-c.h"
 #include "sgx_attest.h"
 #include "sgx_internal.h"
 #include "sgx_log.h"

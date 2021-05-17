@@ -3,6 +3,8 @@
  *                         Rafal Wojdyla <omeg@invisiblethingslab.com>
  */
 
+#define _GNU_SOURCE
+
 #include "ias.h"
 
 #include <assert.h>
@@ -13,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 
 #include "util.h"

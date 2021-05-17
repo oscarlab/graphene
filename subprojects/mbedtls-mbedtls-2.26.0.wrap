@@ -1,0 +1,8 @@
+[wrap-file]
+directory = mbedtls-mbedtls-2.26.0
+source_url = https://github.com/ARMmbed/mbedtls/archive/mbedtls-2.26.0.tar.gz
+source_fallback_url = https://packages.grapheneproject.io/distfiles/mbedtls-2.26.0.tar.gz
+source_filename = mbedtls-2.26.0.tar.gz
+source_hash = 35d8d87509cd0d002bddbd5508b9d2b931c5e83747d087234cc7ad551d53fe05
+
+patch_directory = mbedtls

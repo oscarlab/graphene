@@ -1,19 +1,25 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 
+#define _GNU_SOURCE
+
 #include <stddef.h> /* needed by <linux/signal.h> for size_t */
 #include <asm/errno.h>
 #include <asm/prctl.h>
 #include <asm/signal.h>
 #include <linux/futex.h>
 #include <linux/signal.h>
+#include <sched.h>
+#include <sys/mman.h>
 
 #include "assert.h"
 #include "gdb_integration/sgx_gdb.h"
 #include "pal_internal.h"
+#include "pal_linux_defs.h"
 #include "pal_security.h"
 #include "sgx_enclave.h"
 #include "sgx_internal.h"
 #include "sgx_log.h"
+#include "sgx_tls.h"
 #include "spinlock.h"
 
 struct thread_map {

@@ -9,17 +9,32 @@
  * creation.
  */
 
+#define _GNU_SOURCE
+
+#include "sgx_process.h"
+
 #include <asm/errno.h>
 #include <asm/fcntl.h>
 #include <linux/fs.h>
+#include <sched.h>
+#include <sys/socket.h>
 
 #include "linux_utils.h"
-#include "pal_linux.h"
 #include "pal_rtld.h"
 #include "sgx_enclave.h"
 #include "sgx_internal.h"
 #include "sgx_log.h"
 #include "sgx_tls.h"
+
+#ifdef DEBUG
+#define ARCH_VFORK()                                                                 \
+    (g_pal_enclave.pal_sec.in_gdb                                                    \
+         ? INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL) \
+         : INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK, 0, NULL, NULL))
+#else
+#define ARCH_VFORK() \
+    (INLINE_SYSCALL(clone, 4, CLONE_VM|CLONE_VFORK, 0, NULL, NULL))
+#endif
 
 extern char* g_pal_loader_path;
 extern char* g_libpal_path;

@@ -1,13 +1,9 @@
-libgraphene_libos = cc.find_library('graphene-lib',
-    dirs: join_paths(meson.current_source_dir(), '.lib'))
-
 if skeleton
     libpal = libpal_skeleton_dep
 elif direct
     libpal = libpal_direct_dep
 elif sgx
-    libpal = cc.find_library('pal-Linux-SGX',
-        dirs: join_paths(meson.current_source_dir(), '../../../Runtime'))
+    libpal = libpal_sgx_dep
 else
     error('need to link libsysdb against any PAL')
 endif
@@ -148,7 +144,7 @@ shared_library('sysdb',
         shim_lds,
     ],
     dependencies: [
-        libgraphene_libos,
+        common_dep,
         libpal,
     ],
 

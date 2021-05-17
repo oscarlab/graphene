@@ -4,11 +4,12 @@
  *                    Michał Kowalczyk <mkow@invisiblethingslab.com>
  */
 
+#include <fcntl.h>
+
 #include "assert.h"
 #include "linux_utils.h"
 #include "pal.h"
 #include "pal_internal.h"
-#include "pal_linux.h"
 #include "perm.h"
 #include "sgx_log.h"
 

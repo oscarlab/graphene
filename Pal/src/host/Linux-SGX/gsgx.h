@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
-/* (C) Copyright 2020 Intel Corporation
- *                    Dmitrii Kuvaiskii <dmitrii.kuvaiskii@intel.com>
+/* (C) Copyright 2020-2021 Intel Corporation
+ *                         Dmitrii Kuvaiskii <dmitrii.kuvaiskii@intel.com>
+ *                         Wojtek Porczyk <woju@invisiblethingslab.com>
  */
 
 #ifndef __ARCH_GSGX_H__
@@ -10,10 +11,21 @@
 #define __packed __attribute__((packed))
 #endif
 
+#include <graphene-config.h>
 #include <linux/stddef.h>
 #include <linux/types.h>
 
-#include "@DRIVER_SGX_H@"
+#if defined(CONFIG_SGX_DRIVER_UPSTREAM)
+#include <uapi/asm/sgx.h>
+#elif defined(CONFIG_SGX_DRIVER_DCAP_1_10)
+#include <sgx_user.h>
+#elif defined(CONFIG_SGX_DRIVER_DCAP_1_6)
+#include <uapi/asm/sgx_oot.h>
+#elif defined(CONFIG_SGX_DRIVER_OOT)
+#include <sgx_user.h>
+#else
+#error "No sgx driver configured"
+#endif
 
 #define GSGX_FILE  "/dev/gsgx"
 
@@ -47,9 +59,5 @@
 #ifndef SGX_INVALID_LICENSE
 #define SGX_INVALID_LICENSE     SGX_INVALID_EINITTOKEN
 #endif
-
-#define ISGX_FILE "@ISGX_FILE@"
-
-@DEFINE_DCAP@
 
 #endif /* __ARCH_GSGX_H__ */

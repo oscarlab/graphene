@@ -1,1 +1,2 @@
 subdir('include')
+subdir('src')

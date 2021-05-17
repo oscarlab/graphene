@@ -78,7 +78,7 @@ def read_sigstruct(sig):
 
 def is_dcap():
     '''Check if we're dealing with DCAP driver.'''
-    return hasattr(offs, 'SGX_DCAP')
+    return not hasattr(offs, 'CONFIG_SGX_DRIVER_OOT')
 
 def connect_aesmd(attr):
     '''Connect with AESMD.'''

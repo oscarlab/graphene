@@ -10,11 +10,8 @@ endif
 
 .PHONY: $(targets)
 $(targets):
-	$(MAKE) -C Scripts $@
-	$(MAKE) -C common $@
-	$(MAKE) -C Pal $@
 	$(MAKE) -C LibOS $@
-	$(MAKE) -C Runtime $@
+	$(MAKE) -C Scripts $@
 	$(MAKE) -C Tools $@
 	@echo
 	@echo NOTE: We are in the middle of a transition to the Meson buildsystem.

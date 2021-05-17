@@ -1,7 +1,4 @@
 /asm-offsets.h
-/generated-offsets.s
-/generated_offsets.py
-/gsgx.h
 /pal-sgx
 /quote/aesm.pb-c.c
 /quote/aesm.pb-c.h

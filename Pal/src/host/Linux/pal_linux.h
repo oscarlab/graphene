@@ -86,18 +86,6 @@ extern struct pal_linux_state {
 #define SIGCHLD 17
 #endif
 
-#ifdef DEBUG
-#define ARCH_VFORK()                                                                 \
-    (g_linux_state.in_gdb                                                            \
-         ? INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL) \
-         : INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK, 0, NULL, NULL))
-#else
-# define ARCH_VFORK()                                                       \
-    (INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK, 0, NULL, NULL))
-#endif
-
-#define DEFAULT_BACKLOG 2048
-
 int clone(int (*__fn)(void* __arg), void* __child_stack, int __flags, const void* __arg, ...);
 
 /* PAL main function */

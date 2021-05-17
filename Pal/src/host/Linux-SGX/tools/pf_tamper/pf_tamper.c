@@ -3,8 +3,11 @@
  *                         Rafal Wojdyla <omeg@invisiblethingslab.com>
  */
 
+#define _GNU_SOURCE
+
 #include <fcntl.h>
 #include <getopt.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>

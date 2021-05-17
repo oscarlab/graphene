@@ -1,0 +1,11 @@
+[wrap-file]
+directory = uthash-2.1.0
+source_url = https://github.com/troydhanson/uthash/archive/v2.1.0.tar.gz
+source_fallback_url = https://packages.grapheneproject.io/distfiles/uthash-2.1.0.tar.gz
+source_filename = uthash-2.1.0.tar.gz
+source_hash = 152ccd8e64d0f495377232e3964d06c7ec8bb8c3fbd3217f8a5702614f9a669e
+
+# TODO after meson 0.55 (focal EOL), patch_directory
+patch_url = https://example.invalid/
+patch_filename = uthash-2.1.0-wrap.tar
+patch_hash = 5c2360d480919ad3c3fa3f5554420ea61b5964e5549e0b96e8b6027396de20b2

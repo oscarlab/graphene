@@ -3,6 +3,8 @@
  *                         Rafal Wojdyla <omeg@invisiblethingslab.com>
  */
 
+#define _GNU_SOURCE
+
 #include "attestation.h"
 
 #include <assert.h>
@@ -14,7 +16,8 @@
 #include <mbedtls/md.h>
 #include <mbedtls/pk.h>
 
-#include "cJSON.h"
+#include <cjson/cJSON.h>
+
 #include "sgx_arch.h"
 #include "sgx_attest.h"
 #include "util.h"

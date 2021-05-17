@@ -1,32 +1,44 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* Copyright (C) 2014 Stony Brook University
  */
+#define _GNU_SOURCE
+
 #include "sgx_enclave.h"
 
 #include <asm/errno.h>
 #include <asm/ioctls.h>
 #include <asm/mman.h>
 #include <asm/socket.h>
+#include <limits.h>
 #include <linux/fs.h>
 #include <linux/futex.h>
 #include <linux/in.h>
 #include <linux/in6.h>
-#include <linux/signal.h>
 #include <math.h>
-#include <sys/wait.h>
+#include <sched.h>
+#include <sys/mman.h>
 
 #include "cpu.h"
 #include "debug_map.h"
 #include "ecall_types.h"
 #include "linux_utils.h"
 #include "ocall_types.h"
+#include "pal_linux_defs.h"
 #include "pal_linux_error.h"
 #include "pal_security.h"
 #include "rpc_queue.h"
 #include "sgx_internal.h"
 #include "sgx_log.h"
+#include "sgx_process.h"
 #include "sgx_tls.h"
-#include "sigset.h"
+
+/*
+ * This needs to be included here because it conflicts with sigset.h included in pal_linux.
+ * TODO: Make sure we define WIFEXITED() etc. and remove this.
+ */
+#include <sys/wait.h>
+
+#define DEFAULT_BACKLOG 2048
 
 #define ODEBUG(code, ms) \
     do {                 \

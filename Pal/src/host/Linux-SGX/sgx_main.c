@@ -6,13 +6,15 @@
  *                    Michał Kowalczyk <mkow@invisiblethingslab.com>
  */
 
+#define _GNU_SOURCE
+
 /* FIXME: Sorting+re-grouping includes here causes tons of
  * "../../../include/sysdeps/generic/ldsodefs.h:30:32: error: unknown type name ‘Elf__ELF_NATIVE_CLASS_Addr’
  *   #define ElfW(type)       _ElfW(Elf, __ELF_NATIVE_CLASS, type)"
  * errors.
  */
 #include "pal_internal-arch.h"
-#include "pal_linux.h"
+#include "pal_linux_defs.h"
 #include "pal_linux_error.h"
 #include "pal_rtld.h"
 #include "hex.h"
@@ -37,6 +39,7 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <sys/auxv.h>
+#include <sys/mman.h>
 
 #include "sysdeps/generic/ldsodefs.h"
 
