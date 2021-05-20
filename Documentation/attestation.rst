@@ -261,6 +261,10 @@ The library uses the following environment variables if available:
 - ``RA_TLS_CERT_TIMESTAMP_NOT_AFTER`` -- the generated RA-TLS certificate uses
   this timestamp-not-after value, in the format "20301231235959" (this is also
   the default value if environment variable is not available).
+- ``RA_TLS_CERT_SIGNATURE_ALGO`` -- the generated RA-TLS certificate uses the
+  key pair created by the specified algorithm. The currently available values
+  are ``RSA``, ``ECDSA_SECP256K1``, ``ECDSA_SECP256R1``, ``ECDSA_SECP384R1``,
+  ``ECDSA_SECP521R1``. The default value is ``RSA``.
 
 ``ra_tls_verify_epid.so``
 ^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -151,7 +151,7 @@ static int sha256_over_crt_pk(mbedtls_x509_crt* crt, uint8_t* sha) {
 
     /* below function writes data at the end of the buffer */
     int pk_der_size_byte = mbedtls_pk_write_pubkey_der(&crt->pk, pk_der, PUB_KEY_SIZE_MAX);
-    if (pk_der_size_byte != RSA_PUB_3072_KEY_DER_LEN)
+    if (pk_der_size_byte <= 0)
         return MBEDTLS_ERR_PK_INVALID_PUBKEY;
 
     /* move the data to the beginning of the buffer, to avoid pointer arithmetic later */

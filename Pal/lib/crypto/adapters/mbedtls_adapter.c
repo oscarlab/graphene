@@ -11,6 +11,7 @@
 #include "crypto.h"
 #include "mbedtls/aes.h"
 #include "mbedtls/cmac.h"
+#include "mbedtls/ecp.h"
 #include "mbedtls/entropy_poll.h"
 #include "mbedtls/error.h"
 #include "mbedtls/gcm.h"
@@ -92,6 +93,29 @@ static int mbedtls_to_pal_error(int error) {
 
         case MBEDTLS_ERR_RSA_RNG_FAILED:
             return -PAL_ERROR_CRYPTO_RNG_FAILED;
+
+        case MBEDTLS_ERR_ECP_BAD_INPUT_DATA:
+            return -PAL_ERROR_CRYPTO_BAD_INPUT_DATA;
+
+        case MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE:
+            return -PAL_ERROR_CRYPTO_FEATURE_UNAVAILABLE;
+
+        case MBEDTLS_ERR_ECP_VERIFY_FAILED:
+            return -PAL_ERROR_CRYPTO_VERIFY_FAILED;
+
+        case MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL:
+        case MBEDTLS_ERR_ECP_ALLOC_FAILED:
+            return -PAL_ERROR_NOMEM;
+
+        case MBEDTLS_ERR_ECP_RANDOM_FAILED:
+            return -PAL_ERROR_CRYPTO_RNG_FAILED;
+
+        case MBEDTLS_ERR_ECP_INVALID_KEY:
+        case MBEDTLS_ERR_ECP_SIG_LEN_MISMATCH:
+            return -PAL_ERROR_CRYPTO_INVALID_KEY;
+
+        case MBEDTLS_ERR_ECP_IN_PROGRESS:
+            return -PAL_ERROR_TRYAGAIN;
 
         case MBEDTLS_ERR_SSL_WANT_READ:
         case MBEDTLS_ERR_SSL_WANT_WRITE:

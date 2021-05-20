@@ -8,6 +8,9 @@ loader.log_level = "{{ log_level }}"
 
 loader.env.LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/libs"
 
+# use ECDSA instead of the default RSA for RA-TLS certificate. This is just for testing.
+loader.env.RA_TLS_CERT_SIGNATURE_ALGO = "ECDSA_SECP256K1"
+
 # Read application arguments directly from the command line. Don't use this on production!
 loader.insecure__use_cmdline_argv = 1
 
