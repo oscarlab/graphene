@@ -25,6 +25,12 @@ if sgx
         configuration: configuration_data(),
     )
 
+    custom_target('aesm_pb2.py',
+        command: ['protoc', '--python_out=@OUTDIR@', '@INPUT@'],
+        input: ['aesm.proto'],
+        output: ['aesm_pb2.py'],
+        install_dir: python3_pkgdir)
+
     install_data([
         offsets_py,
         '_aesm_pb2.py',

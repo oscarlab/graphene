@@ -167,7 +167,6 @@ ignored-classes=
 # and thus existing member attributes cannot be deduced by static analysis. It
 # supports qualified module names, as well as Unix pattern matching.
 ignored-modules=
-    aesm_pb2,
     asv,
 
 # Show a hint with possible names when a member name was not found. The aspect

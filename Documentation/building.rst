@@ -70,6 +70,9 @@ Run the following commands on Ubuntu to install SGX-related dependencies::
         python3-protobuf
     python3 -m pip install toml>=0.10
 
+    # For Debian
+    sudo apt-get install -y python3-protobuf protobuf-compiler
+
 2. Install the Linux kernel patched with FSGSBASE
 """""""""""""""""""""""""""""""""""""""""""""""""
 FSGSBASE is a feature in recent processors which allows direct access to the FS

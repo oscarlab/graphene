@@ -8,7 +8,7 @@ import socket
 import struct
 import sys
 
-from . import _aesm_pb2 as aesm_pb2
+from . import aesm_pb2 # pylint: disable=no-name-in-module
 
 try:
     from . import _offsets as offs # pylint: disable=import-error
