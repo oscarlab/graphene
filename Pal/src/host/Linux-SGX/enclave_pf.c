@@ -387,7 +387,7 @@ static int register_protected_path(const char* path, struct protected_file** new
 
     memcpy(new->path, path, new->path_len + 1);
     new->refcount = 0;
-    new->writable_fd = -1;
+    new->host_fd = -1;
 
     bool is_dir;
     ret = is_directory(path, &is_dir);

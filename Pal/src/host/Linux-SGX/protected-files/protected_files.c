@@ -1245,6 +1245,23 @@ pf_status_t pf_close(pf_context_t* pf) {
     return pf->last_error;
 }
 
+pf_status_t pf_get_mode(pf_context_t* pf, pf_file_mode_t* mode) {
+    if (!g_initialized)
+        return PF_STATUS_UNINITIALIZED;
+
+    *mode = pf->mode;
+    return PF_STATUS_SUCCESS;
+}
+
+pf_status_t pf_set_mode(pf_context_t* pf, pf_file_mode_t mode) {
+    if (!g_initialized)
+        return PF_STATUS_UNINITIALIZED;
+
+    assert((pf->mode & mode) == pf->mode); /* can only extend old mode, cannot narrow it */
+    pf->mode = mode;
+    return PF_STATUS_SUCCESS;
+}
+
 pf_status_t pf_get_size(pf_context_t* pf, uint64_t* size) {
     if (!g_initialized)
         return PF_STATUS_UNINITIALIZED;

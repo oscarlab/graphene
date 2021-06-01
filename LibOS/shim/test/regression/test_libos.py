@@ -413,6 +413,12 @@ class TC_30_Syscall(RegressionTestCase):
         stdout, _ = self.run_binary(['file_size'])
         self.assertIn('test completed successfully', stdout)
 
+    def test_033_protected_file(self):
+        if os.path.exists("protected_file_1.dat"):
+            os.remove("protected_file_1.dat")
+        stdout, _ = self.run_binary(['protected_file', 'protected_file_1.dat'])
+        self.assertIn('TEST OK', stdout)
+
     def test_040_futex_bitset(self):
         stdout, _ = self.run_binary(['futex_bitset'])
 

@@ -178,8 +178,8 @@ struct protected_file {
     size_t path_len;
     char* path;
     pf_context_t* context; /* NULL until PF is opened */
-    int64_t refcount; /* used for deciding when to call unload_protected_file() */
-    int writable_fd; /* fd of underlying file for writable PF, -1 if no writable handles are open */
+    int64_t refcount;      /* used for deciding when to call unload_protected_file() */
+    int host_fd;           /* -1 until PF is opened */
 };
 
 /* Initialize the PF library, register PFs from the manifest */

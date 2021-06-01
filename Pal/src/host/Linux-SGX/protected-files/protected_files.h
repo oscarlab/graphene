@@ -239,6 +239,24 @@ pf_status_t pf_read(pf_context_t* pf, uint64_t offset, size_t size, void* output
 pf_status_t pf_write(pf_context_t* pf, uint64_t offset, size_t size, const void* input);
 
 /*!
+ * \brief Get access mode (read-only, write-only, read-write) of a PF
+ *
+ * \param [in] pf PF context
+ * \param [out] mode Access mode of \a pf
+ * \return PF status
+ */
+pf_status_t pf_get_mode(pf_context_t* pf, pf_file_mode_t* mode);
+
+/*!
+ * \brief Set access mode (read-only, write-only, read-write) of a PF
+ *
+ * \param [in] pf PF context
+ * \param [in] mode New access mode of \a pf
+ * \return PF status
+ */
+pf_status_t pf_set_mode(pf_context_t* pf, pf_file_mode_t mode);
+
+/*!
  * \brief Get data size of a PF
  *
  * \param [in] pf PF context

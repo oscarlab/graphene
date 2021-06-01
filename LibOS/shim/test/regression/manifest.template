@@ -40,3 +40,7 @@ sgx.allowed_files.testfile = "file:testfile" # for mmap_file test
 sgx.thread_num = 16
 
 sgx.nonpie_binary = 1
+
+# for protected_file test
+sgx.protected_files.pf1 = "file:protected_file_1.dat"
+sgx.protected_files_key = "ffeeddccbbaa99887766554433221100"
