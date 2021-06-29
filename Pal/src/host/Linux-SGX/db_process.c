@@ -27,30 +27,61 @@
 #include "protected-files/protected_files.h"
 #include "spinlock.h"
 
-#define LOCAL_ATTESTATION_CHALLENGE_STR "GRAPHENE_LOCAL_ATTESTATION_CHALLENGE"
-
 /*
- * For SGX, the creation of a child process requires a clean enclave and a secure channel
- * between the parent and child processes (enclaves). The establishment of the secure
- * channel must be resilient to a host-level, root-privilege adversary. Such an adversary
- * can either create arbitrary enclaves, or intercept the handshake protocol between the
- * parent and child enclaves to launch a man-in-the-middle attack.
+ * For SGX, the creation of a child process requires a clean enclave and a secure channel between
+ * the parent and child processes (enclaves). The establishment of the secure channel must be
+ * resilient to a host-level, root-privilege adversary. Such an adversary can either create
+ * arbitrary enclaves, or intercept the handshake protocol between the parent and child enclaves to
+ * launch a man-in-the-middle attack.
+ *
+ * The below protocol combines unauthenticated Diffie-Hellman Key Exchange (DHKE) with the SGX local
+ * attestation (this combination provides authenticated DHKE). The protocol is a modified ISO KE
+ * protocol (as described in Section 4 of the "SIGMA: the `SIGn-and-MAc` Approach to Authenticated
+ * Diffie-Hellman and its Use in the IKE Protocols" paper from Hugo Krawczyk). The ISO KE protocol
+ * does not support the "identity protection" feature; this feature is however useless in the SGX
+ * local attestation threat model (malicious host knows identities of all running SGX enclaves
+ * anyway). The ISO KE protocol is proven to be secure and minimal.
+ *
+ * One superficial difference of the below protocol from the original ISO KE protocol is the number
+ * of steps involved. Our protocol uses 5 steps (send DH's g_x, receive DH's g_y, send SGX target
+ * info with identity of enclave A, receive SGX report of enclave B, send SGX report of enclave A).
+ * Note here that SGX report of an enclave contains also the identity of the enclave. The original
+ * ISO KE protocol uses 3 steps (send DH's g_x and identity of A, receive DH's g_y and identity of B
+ * and signature of B over {g_x, g_y, A}, send signature of A over {g_x, g_y, B}). Looking at the
+ * steps, it is clear that our protocol could be optimized to send 3 messages instead of 5 messages
+ * and would result in the original ISO KE protocol. We implement our protocol in 5 steps purely for
+ * readability.
+ *
+ * Another difference of the below protocol from the original ISO KE protocol is the notion of
+ * "identity". In SGX local attestation, identity of an enclave is a combination of its
+ * measurements: mrenclave, attributes, configsvn, etc. This enclave identity is enclosed in the SGX
+ * targetinfo struct as well as in the SGX report. Thus, we use SGX targetinfo and SGX report as
+ * identities.
+ *
+ * Final difference is CMAC used in SGX local attestation for SGX report validation, instead of the
+ * signatures in the original ISO KE protocol. This CMAC however provides the same security
+ * guarantees because it is generated over the SGX report that contains the target identity of the
+ * remote enclave, thus it corresponds to the "directed signature from B to A" in ISO KE.
+ *
+ * Note that Graphene does *not* use the SIGMA-like protocol (used in e.g. Intel SGX SDK). SIGMA
+ * family of protocols is an enhancement over ISO KE to add the "identity protection" feature, which
+ * is irrelevant for SGX local attestation. Thus, Graphene chooses a simpler protocol.
  *
  * Prerequisites of a secure channel:
  * (1) A session key needs to be shared only between the parent and child enclaves.
  *
- *       See the implementation in _DkStreamKeyExchange().
- *       When initializing an RPC stream, both ends of the stream needs to use
- *       Diffie-Hellman to exchange a session key. The key will be used to both identify
- *       the connection (to prevent man-in-the-middle attack) and for future encryption.
+ *       See the implementation in _DkStreamKeyExchange(). When initializing a secure stream, both
+ *       ends of the stream needs to use Diffie-Hellman to establish a session key. The DH
+ *       collaterals are used to identify the connection (via SHA256(g_x || g_y) to prevent
+ *       man-in-the-middle attack) as well as to derive the session key for secure IPC.
  *
  * (2) Both the parent and child enclaves need to be proven by the Intel CPU.
  *
- *       See the implementation in _DkStreamReportRequest() and _DkStreamReportRespond().
- *       The two ends of the RPC stream need to exchange local attestation reports
- *       signed by the Intel CPUs to prove themselves to be running inside enclaves
- *       on the same platform. The local attestation reports contain no secret information
- *       and can be verified cryptographically, and can be sent on an unencrypted channel.
+ *       See the implementation in _DkStreamReportRequest() and _DkStreamReportRespond(). The two
+ *       ends of the stream need to exchange SGX local attestation reports signed by the Intel CPUs
+ *       to prove themselves to be running inside enclaves on the same platform. The local
+ *       attestation reports contain no secret information and can be verified cryptographically,
+ *       and can be sent on an unencrypted channel.
  *
  *       The flow of local attestation is as follows:
  *         - Parent: Send targetinfo(Parent) to Child
@@ -71,50 +102,16 @@
  *     (for preventing man-in-the-middle attacks).
  *
  *       See the implementation in is_remote_enclave_ok(). The local reports from both sides will
- *       contain a secure hash over the session key. Because the session key is randomly created for
- *       each enclave pair, no report can be reused even from an enclave with the same mr_enclave.
+ *       contain a secure hash over DH collaterals: SHA256(g_x || g_y). Because a new DH key
+ *       exchange protocol is run for each enclave pair, no report can be reused even from an
+ *       enclave with the same mr_enclave.
  */
 
-static int hash_session_key(const PAL_SESSION_KEY* session_key, sgx_report_data_t* data) {
-    /* use SHA256 to hash the session key between two enclaves into SGX report data */
-    int ret;
-    LIB_SHA256_CONTEXT sha;
-
-    /* SGX report data is 64B in size, but SHA256 hash is only 32B in size, so pad with zeros */
-    memset(data, 0, sizeof(*data));
-
-    ret = lib_SHA256Init(&sha);
-    if (ret < 0)
-        return ret;
-
-    /* newly established session key between two enclaves is the only secure component here */
-    ret = lib_SHA256Update(&sha, (uint8_t*)session_key, sizeof(*session_key));
-    if (ret < 0)
-        return ret;
-
-    /* add a constant tag */
-    ret = lib_SHA256Update(&sha, (uint8_t*)LOCAL_ATTESTATION_CHALLENGE_STR,
-                           sizeof(LOCAL_ATTESTATION_CHALLENGE_STR));
-    if (ret < 0)
-        return ret;
-
-    ret = lib_SHA256Final(&sha, (uint8_t*)data);
-    if (ret < 0)
-        return ret;
-
-    return 0;
-}
-
-bool is_remote_enclave_ok(const PAL_SESSION_KEY* session_key, sgx_measurement_t* mr_enclave,
+bool is_remote_enclave_ok(sgx_measurement_t* mr_enclave, sgx_report_data_t* my_data,
                           sgx_report_data_t* remote_data) {
-    sgx_report_data_t calculated_data;
-    int ret = hash_session_key(session_key, &calculated_data);
-    if (ret < 0)
-        return false;
-
     /* must make sure the signer of the report is also the owner of the key,
        in order to prevent man-in-the-middle attack */
-    if (memcmp(remote_data, &calculated_data, sizeof(calculated_data)))
+    if (memcmp(remote_data, my_data, sizeof(*my_data)))
         return false;
 
     /* all Graphene enclaves with same configuration (manifest) should have the same MR_ENCLAVE */
@@ -149,12 +146,9 @@ int _DkProcessCreate(PAL_HANDLE* handle, const char** args) {
     child->process.is_server   = true;
     child->process.ssl_ctx     = NULL;
 
-    ret = _DkStreamKeyExchange(child, &child->process.session_key);
-    if (ret < 0)
-        goto failed;
-
-    __sgx_mem_aligned sgx_report_data_t sgx_report_data;
-    ret = hash_session_key(&child->process.session_key, &sgx_report_data);
+    __sgx_mem_aligned sgx_report_data_t sgx_report_data = {0};
+    ret = _DkStreamKeyExchange(/*is_parent=*/false, child, &child->process.session_key,
+                               (uint8_t*)&sgx_report_data);
     if (ret < 0)
         goto failed;
 
@@ -216,12 +210,9 @@ int init_child_process(PAL_HANDLE* parent_handle) {
     parent->process.is_server   = false;
     parent->process.ssl_ctx     = NULL;
 
-    int ret = _DkStreamKeyExchange(parent, &parent->process.session_key);
-    if (ret < 0)
-        return ret;
-
-    __sgx_mem_aligned sgx_report_data_t sgx_report_data;
-    ret = hash_session_key(&parent->process.session_key, &sgx_report_data);
+    __sgx_mem_aligned sgx_report_data_t sgx_report_data = {0};
+    int ret = _DkStreamKeyExchange(/*is_parent=*/true, parent, &parent->process.session_key,
+                                   (uint8_t*)&sgx_report_data);
     if (ret < 0)
         return ret;
 

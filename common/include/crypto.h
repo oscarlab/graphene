@@ -68,7 +68,7 @@ int lib_HKDF_SHA256(const uint8_t* input_key, size_t input_key_size, const uint8
 
 /* Diffie-Hellman Key Exchange */
 int lib_DhInit(LIB_DH_CONTEXT* context);
-int lib_DhCreatePublic(LIB_DH_CONTEXT* context, uint8_t* public, size_t* public_size);
+int lib_DhCreatePublic(LIB_DH_CONTEXT* context, uint8_t* public, size_t public_size);
 int lib_DhCalcSecret(LIB_DH_CONTEXT* context, uint8_t* peer, size_t peer_size, uint8_t* secret,
                      size_t* secret_size);
 void lib_DhFinal(LIB_DH_CONTEXT* context);

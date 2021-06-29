@@ -451,20 +451,13 @@ int lib_DhInit(LIB_DH_CONTEXT* context) {
     return 0;
 }
 
-int lib_DhCreatePublic(LIB_DH_CONTEXT* context, uint8_t* public, size_t* public_size) {
-    int ret;
-
-    if (*public_size != DH_SIZE)
+int lib_DhCreatePublic(LIB_DH_CONTEXT* context, uint8_t* public, size_t public_size) {
+    if (public_size != DH_SIZE)
         return -PAL_ERROR_INVAL;
 
-    /* The RNG here is used to generate secret exponent X. */
-    ret = mbedtls_dhm_make_public(context, context->len, public, *public_size, RandomWrapper, NULL);
-    if (ret < 0)
-        return mbedtls_to_pal_error(ret);
-
-    /* mbedtls writes leading zeros in the big-endian output to pad to public_size, so leave
-     * caller's public_size unchanged */
-    return 0;
+    int ret = mbedtls_dhm_make_public(context, context->len, public, public_size, RandomWrapper,
+                                      /*p_rng=*/NULL);
+    return mbedtls_to_pal_error(ret);
 }
 
 int lib_DhCalcSecret(LIB_DH_CONTEXT* context, uint8_t* peer, size_t peer_size, uint8_t* secret,

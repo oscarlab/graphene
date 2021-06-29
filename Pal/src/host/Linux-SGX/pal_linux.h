@@ -228,8 +228,8 @@ struct protected_file* find_protected_file(const char* path);
 /* Find protected file by handle (uses handle's path to call find_protected_file) */
 struct protected_file* find_protected_file_handle(PAL_HANDLE handle);
 
-/* exchange and establish a 256-bit session key */
-int _DkStreamKeyExchange(PAL_HANDLE stream, PAL_SESSION_KEY* key);
+/* perform Diffie-Hellman to establish a session key and also produce a hash over (g_x || g_y) */
+int _DkStreamKeyExchange(bool is_parent, PAL_HANDLE stream, PAL_SESSION_KEY* key, uint8_t* hash);
 
 /* master key for all enclaves of one application, populated by the first enclave and inherited by
  * all other enclaves (children, their children, etc.); used as master key in pipes' encryption */
@@ -261,12 +261,12 @@ int sgx_get_report(const sgx_target_info_t* target_info, const sgx_report_data_t
  * with the same configuration have the same MR_ENCLAVE), and that the signer of the SGX report is
  * the owner of the newly established session key.
  *
- * \param  session key  Newly established session key between this enclave and remote enclave.
  * \param  mr_enclave   MR_ENCLAVE of the remote enclave received in its SGX report.
+ * \param  my_data      This enclave's SGX report data, contains hash of the session key.
  * \param  remote_data  Remote enclave's SGX report data, contains hash of the session key.
  * \return 0 on success, negative error code otherwise.
  */
-bool is_remote_enclave_ok(const PAL_SESSION_KEY* session_key, sgx_measurement_t* mr_enclave,
+bool is_remote_enclave_ok(sgx_measurement_t* mr_enclave, sgx_report_data_t* my_data,
                           sgx_report_data_t* remote_data);
 /*!
  * \brief Request a local report on an RPC stream (typically called by parent enclave).
