@@ -184,113 +184,52 @@ int sgx_verify_report(sgx_report_t* report) {
     return 0;
 }
 
-/* For each file that requires authentication (specified in the manifest as "sgx.trusted_files"), a
- * SHA256 hash is generated and stored in the manifest, signed and verified as part of the enclave's
- * crypto measurement. When user opens such a file, Graphene loads the whole file, calculates its
- * SHA256 hash, and checks against the corresponding hash in the manifest. If the hashes do not
- * match, the file access will be rejected.
- *
- * During the generation of the SHA256 hash, a 128-bit hash (truncated SHA256) is also generated for
- * each chunk (of size TRUSTED_CHUNK_SIZE) in the file. The per-chunk hashes are used for partial
- * verification in future reads, to avoid re-verifying the whole file again or the need of caching
- * file contents. */
-DEFINE_LIST(trusted_file);
-struct trusted_file {
-    LIST_TYPE(trusted_file) list;
-    uint64_t size;
-    bool allowed;
-    sgx_file_hash_t file_hash;      /* hash over the whole file, must be the same as in manifest */
-    sgx_chunk_hash_t* chunk_hashes; /* array of hashes over separate file chunks */
-    size_t uri_len;
-    char uri[]; /* must be NULL-terminated */
-};
-
 DEFINE_LISTP(trusted_file);
 static LISTP_TYPE(trusted_file) g_trusted_file_list = LISTP_INIT;
 static spinlock_t g_trusted_file_lock = INIT_SPINLOCK_UNLOCKED;
 static int g_file_check_policy = FILE_CHECK_POLICY_STRICT;
 
-/* Assumes `path` is normalized */
+/* assumes `path` is normalized */
 static bool path_is_equal_or_subpath(const struct trusted_file* tf, const char* path,
                                      size_t path_len) {
-    if (tf->uri_len > path_len || memcmp(tf->uri, path, tf->uri_len)) {
-        /* tf->uri is not prefix of `path` */
+    const char* tf_path = tf->uri + URI_PREFIX_FILE_LEN;
+    size_t tf_path_len  = tf->uri_len - URI_PREFIX_FILE_LEN;
+
+    if (tf_path_len > path_len || memcmp(tf_path, path, tf_path_len)) {
+        /* tf path is not prefix of `path` */
         return false;
     }
-    if (tf->uri_len == path_len) {
+    if (tf_path_len == path_len) {
         /* Both are equal */
         return true;
     }
-    if (tf->uri[tf->uri_len - 1] == '/' || path[tf->uri_len] == '/') {
-        /* tf->uri is a subpath of `path` */
-        return true;
-    }
-    if (tf->uri_len == URI_PREFIX_FILE_LEN &&
-            !memcmp(tf->uri, URI_PREFIX_FILE, URI_PREFIX_FILE_LEN)) {
-        /* Empty path is a prefix of everything */
+    if (tf_path[tf_path_len - 1] == '/' || path[tf_path_len] == '/') {
+        /* tf path is a subpath of `path` */
         return true;
     }
     return false;
 }
 
-int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint64_t* size_ptr,
-                      int create, void** umem) {
-    *chunk_hashes_ptr = NULL;
-    *size_ptr = 0;
-    *umem = NULL;
-
-    uint8_t* tmp_chunk = NULL; /* scratch buf to calculate whole-file and chunk-of-file hashes */
-
+struct trusted_file* get_trusted_or_allowed_file(const char* path) {
     struct trusted_file* tf = NULL;
-    struct trusted_file* tmp;
-    int ret, fd = file->file.fd;
-    char* uri = malloc(URI_MAX);
-    const size_t normpath_size = URI_MAX;
-    char* normpath = malloc(normpath_size);
-    if (!uri || !normpath) {
-        ret = -PAL_ERROR_NOMEM;
-        goto out_free;
-    }
 
-    if (!(HANDLE_HDR(file)->flags & RFD(0))) {
-        ret = -PAL_ERROR_DENIED;
-        goto out_free;
-    }
-
-    ret = _DkStreamGetName(file, uri, URI_MAX);
-    if (ret < 0) {
-        goto out_free;
-    }
-
-    /* Normalize the uri */
-    if (!strstartswith(uri, URI_PREFIX_FILE)) {
-        log_error("Invalid URI [%s]: Trusted files must start with 'file:'\n", uri);
-        ret = -PAL_ERROR_INVAL;
-        goto out_free;
-    }
-    assert(normpath_size > URI_PREFIX_FILE_LEN);
-    memcpy(normpath, URI_PREFIX_FILE, URI_PREFIX_FILE_LEN);
-    size_t len = normpath_size - URI_PREFIX_FILE_LEN;
-    ret = get_norm_path(uri + URI_PREFIX_FILE_LEN, normpath + URI_PREFIX_FILE_LEN, &len);
-    if (ret < 0) {
-        log_error("Path (%s) normalization failed: %s\n", uri + URI_PREFIX_FILE_LEN,
-                  pal_strerror(ret));
-        goto out_free;
-    }
-    len += URI_PREFIX_FILE_LEN;
+    size_t path_len = strlen(path);
 
     spinlock_lock(&g_trusted_file_lock);
 
+    struct trusted_file* tmp;
     LISTP_FOR_EACH_ENTRY(tmp, &g_trusted_file_list, list) {
-        if (tmp->chunk_hashes) {
-            /* trusted files: must be exactly the same URI */
-            if (tmp->uri_len == len && !memcmp(tmp->uri, normpath, len + 1)) {
+        if (tmp->allowed) {
+            /* allowed files: must be a subfolder or file */
+            if (path_is_equal_or_subpath(tmp, path, path_len)) {
                 tf = tmp;
                 break;
             }
         } else {
-            /* allowed files: must be a subfolder or file */
-            if (path_is_equal_or_subpath(tmp, normpath, len)) {
+            /* trusted files: must be exactly the same URI */
+            const char* tf_path = tmp->uri + URI_PREFIX_FILE_LEN;
+            size_t tf_path_len  = tmp->uri_len - URI_PREFIX_FILE_LEN;
+            if (tf_path_len == path_len && !memcmp(tf_path, path, path_len + 1)) {
                 tf = tmp;
                 break;
             }
@@ -299,72 +238,59 @@ int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint
 
     spinlock_unlock(&g_trusted_file_lock);
 
-    if (!tf && get_file_check_policy() != FILE_CHECK_POLICY_ALLOW_ALL_BUT_LOG) {
-        ret = -PAL_ERROR_DENIED;
-        goto out_free;
-    }
+    return tf;
+}
 
-    if (!tf) {
-        log_always("Allowing access to an unknown file due to file_check_policy settings: %s\n",
-                   uri);
+int load_trusted_or_allowed_file(struct trusted_file* tf, PAL_HANDLE file, int create,
+                                 sgx_chunk_hash_t** chunk_hashes_ptr, uint64_t* size_ptr,
+                                 void** umem) {
+    int ret;
 
-        PAL_STREAM_ATTR attr;
-        ret = _DkStreamAttributesQuery(normpath, &attr);
-        if (ret < 0)
-            goto out_free;
-
-        *size_ptr = attr.pending_size;
-        *chunk_hashes_ptr = NULL;
-        goto out_free;
-    }
-
-    assert(tf);
-
-    if (create && !tf->allowed) {
-        log_error("Trying to create/write/append an already-created trusted file '%s'\n", uri);
-        ret = -PAL_ERROR_DENIED;
-        goto out_free;
-    }
+    *chunk_hashes_ptr = NULL;
+    *size_ptr = 0;
+    *umem = NULL;
 
     if (create) {
-        ret = register_trusted_file(uri, NULL, /*check_duplicates=*/true);
-        goto out_free;
+        assert(tf->allowed);
+
+        char* uri = malloc(URI_MAX);
+        if (!uri)
+            return -PAL_ERROR_NOMEM;
+
+        ret = _DkStreamGetName(file, uri, URI_MAX);
+        if (ret < 0) {
+            free(uri);
+            return ret;
+        }
+
+        ret = register_trusted_file(uri, /*checksum_str=*/NULL, /*check_duplicates=*/true);
+
+        free(uri);
+        return ret;
     }
 
     if (tf->allowed) {
         /* allowed files: do not need any integrity, so no need for chunk hashes */
-        *chunk_hashes_ptr = NULL;
-
-        PAL_STREAM_ATTR attr;
-        ret = _DkStreamAttributesQuery(normpath, &attr);
-        if (ret < 0)
-            goto out_free;
-
-        *size_ptr = attr.pending_size;
-        goto out_free;
+        return 0;
     }
 
     /* trusted files: need integrity, so calculate chunk hashes and compare with hash in manifest */
-
-    free(uri);
-    free(normpath);
-    uri = NULL;
-    normpath = NULL;
-
-    /* trusted file must be a regular file (seekable) */
     if (!file->file.seekable)
         return -PAL_ERROR_DENIED;
 
     sgx_chunk_hash_t* chunk_hashes = NULL;
+    uint8_t* tmp_chunk = NULL; /* scratch buf to calculate whole-file and chunk-of-file hashes */
+
     /* mmap the whole trusted file in untrusted memory for future reads/writes; it is
      * caller's responsibility to unmap those areas after use */
     *size_ptr = tf->size;
     if (*size_ptr) {
-        ret = ocall_mmap_untrusted(umem, tf->size, PROT_READ, MAP_SHARED, fd, /*offset=*/0);
+        ret = ocall_mmap_untrusted(umem, tf->size, PROT_READ, MAP_SHARED, file->file.fd,
+                                   /*offset=*/0);
         if (ret < 0) {
             *umem = NULL;
             ret = unix_to_pal_error(ret);
-            goto failed;
+            goto fail;
         }
     }
 
@@ -379,13 +305,13 @@ int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint
     chunk_hashes = malloc(sizeof(sgx_chunk_hash_t) * DIV_ROUND_UP(tf->size, TRUSTED_CHUNK_SIZE));
     if (!chunk_hashes) {
         ret = -PAL_ERROR_NOMEM;
-        goto failed;
+        goto fail;
     }
 
     tmp_chunk = malloc(TRUSTED_CHUNK_SIZE);
     if (!tmp_chunk) {
         ret = -PAL_ERROR_NOMEM;
-        goto failed;
+        goto fail;
     }
 
     sgx_chunk_hash_t* chunk_hashes_item = chunk_hashes;
@@ -394,7 +320,7 @@ int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint
 
     ret = lib_SHA256Init(&file_sha);
     if (ret < 0)
-        goto failed;
+        goto fail;
 
     for (; offset < tf->size; offset += TRUSTED_CHUNK_SIZE, chunk_hashes_item++) {
         /* For each file chunk of size TRUSTED_CHUNK_SIZE, generate 128-bit hash from SHA-256 hash
@@ -405,23 +331,23 @@ int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint
         LIB_SHA256_CONTEXT chunk_sha;
         ret = lib_SHA256Init(&chunk_sha);
         if (ret < 0)
-            goto failed;
+            goto fail;
 
         /* to prevent TOCTOU attacks, copy file contents into the enclave before hashing */
         memcpy(tmp_chunk, *umem + offset, chunk_size);
 
         ret = lib_SHA256Update(&file_sha, tmp_chunk, chunk_size);
         if (ret < 0)
-            goto failed;
+            goto fail;
 
         ret = lib_SHA256Update(&chunk_sha, tmp_chunk, chunk_size);
         if (ret < 0)
-            goto failed;
+            goto fail;
 
         sgx_chunk_hash_t chunk_hash[2]; /* each chunk_hash is 128 bits in size */
         ret = lib_SHA256Final(&chunk_sha, (uint8_t*)&chunk_hash[0]);
         if (ret < 0)
-            goto failed;
+            goto fail;
 
         /* note that we truncate SHA256 to 128 bits */
         memcpy(chunk_hashes_item, &chunk_hash[0], sizeof(*chunk_hashes_item));
@@ -430,12 +356,12 @@ int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint
     sgx_file_hash_t file_hash;
     ret = lib_SHA256Final(&file_sha, file_hash.bytes);
     if (ret < 0)
-        goto failed;
+        goto fail;
 
     /* check the generated hash-over-whole-file against the reference hash in the manifest */
     if (memcmp(&file_hash, &tf->file_hash, sizeof(file_hash))) {
         ret = -PAL_ERROR_DENIED;
-        goto failed;
+        goto fail;
     }
 
     spinlock_lock(&g_trusted_file_lock);
@@ -453,18 +379,13 @@ int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint
     free(tmp_chunk);
     return 0;
 
-failed:
+fail:
     if (*umem) {
         assert(*size_ptr > 0);
         ocall_munmap_untrusted(*umem, *size_ptr);
     }
     free(chunk_hashes);
     free(tmp_chunk);
-    return ret;
-
-out_free:
-    free(uri);
-    free(normpath);
     return ret;
 }
 

@@ -28,57 +28,86 @@
  * GBs in size, and a pread OCALL could fail with -ENOMEM, so we cap to reasonably small size) */
 #define MAX_READ_SIZE (PRESET_PAGESIZE * 1024 * 32)
 
-/* 'open' operation for file streams */
 static int file_open(PAL_HANDLE* handle, const char* type, const char* uri, int access, int share,
                      int create, int options) {
+    int ret;
+    int fd = -1;
+    PAL_HANDLE hdl = NULL;
+
+    struct stat st;
+    int flags = PAL_ACCESS_TO_LINUX_OPEN(access) |
+                PAL_CREATE_TO_LINUX_OPEN(create) |
+                PAL_OPTION_TO_LINUX_OPEN(options);
+
     if (strcmp(type, URI_TYPE_FILE))
         return -PAL_ERROR_INVAL;
 
-    /* prepare the file handle */
-    size_t uri_size = strlen(uri) + 1;
-    PAL_HANDLE hdl = calloc(1, HANDLE_SIZE(file) + uri_size);
-    if (!hdl)
+    /* normalize uri into normpath */
+    size_t normpath_len = URI_MAX;
+    char* normpath = malloc(normpath_len);
+    if (!normpath)
         return -PAL_ERROR_NOMEM;
+
+    ret = get_norm_path(uri, normpath, &normpath_len);
+    if (ret < 0) {
+        log_error("Path (%s) normalization failed: %s\n", uri, pal_strerror(ret));
+        free(normpath);
+        return -PAL_ERROR_DENIED;
+    }
+
+    /* create file PAL handle with path string placed at the end of this handle object */
+    hdl = calloc(1, HANDLE_SIZE(file) + normpath_len + 1);
+    if (!hdl) {
+        free(normpath);
+        return -PAL_ERROR_NOMEM;
+    }
 
     SET_HANDLE_TYPE(hdl, file);
     HANDLE_HDR(hdl)->flags |= RFD(0) | WFD(0);
-    char* path = (void*)hdl + HANDLE_SIZE(file);
-    int ret;
-    if ((ret = get_norm_path(uri, path, &uri_size)) < 0) {
-        log_error("Could not normalize path (%s): %s\n", uri, pal_strerror(ret));
-        free(hdl);
-        return ret;
-    }
-    hdl->file.realpath = (PAL_STR)path;
 
-    struct protected_file* pf = get_protected_file(path);
-    struct stat st;
-    /* whether to re-initialize the PF */
-    bool pf_create = (create & PAL_CREATE_ALWAYS) || (create & PAL_CREATE_TRY);
+    memcpy((char*)hdl + HANDLE_SIZE(file), normpath, normpath_len + 1);
+    hdl->file.realpath = (PAL_STR)hdl + HANDLE_SIZE(file);
 
-    /* try to do the real open */
-    int fd = ocall_open(uri, PAL_ACCESS_TO_LINUX_OPEN(access)  |
-                             PAL_CREATE_TO_LINUX_OPEN(create)  |
-                             PAL_OPTION_TO_LINUX_OPEN(options),
-                        share);
-    if (fd < 0) {
-        ret = unix_to_pal_error(fd);
-        goto out;
+    free(normpath); /* was copied into the file PAL handle object, not needed anymore */
+    normpath = NULL;
+
+    struct protected_file* pf = get_protected_file(hdl->file.realpath);
+    struct trusted_file* tf   = get_trusted_or_allowed_file(hdl->file.realpath);
+
+    if (!pf && !tf && get_file_check_policy() != FILE_CHECK_POLICY_ALLOW_ALL_BUT_LOG) {
+        log_error("Accessing file:%s is denied; file is not protected, trusted or allowed.\n",
+                  hdl->file.realpath);
+        ret = -PAL_ERROR_DENIED;
+        goto fail;
     }
 
-    hdl->file.fd = fd;
+    if (!pf && !tf) {
+        log_always("Allowing access to unknown file due to file_check_policy settings: file:%s\n",
+                   hdl->file.realpath);
 
-    /* check if the file is seekable and get real file size */
-    ret = ocall_fstat(fd, &st);
-    if (ret < 0) {
-        log_error("file_open(%s): fstat failed: %d\n", path, ret);
-        ret = unix_to_pal_error(ret);
-        goto out;
+        fd = ocall_open(uri, flags, share);
+        if (fd < 0) {
+            ret = unix_to_pal_error(fd);
+            goto fail;
+        }
+
+        ret = ocall_fstat(fd, &st);
+        if (ret < 0) {
+            ret = unix_to_pal_error(ret);
+            goto fail;
+        }
+
+        hdl->file.fd = fd;
+        hdl->file.seekable = !S_ISFIFO(st.st_mode);
+        hdl->file.total = st.st_size;
+
+        *handle = hdl;
+        return 0;
     }
-
-    hdl->file.seekable = !S_ISFIFO(st.st_mode);
 
     if (pf) {
+        bool pf_create = (create & PAL_CREATE_ALWAYS) || (create & PAL_CREATE_TRY);
+
         pf_file_mode_t pf_mode = 0;
         if ((access & PAL_ACCESS_RDWR) == PAL_ACCESS_RDWR)
             pf_mode = PF_FILE_MODE_READ | PF_FILE_MODE_WRITE;
@@ -87,66 +116,95 @@ static int file_open(PAL_HANDLE* handle, const char* type, const char* uri, int 
         else
             pf_mode = PF_FILE_MODE_READ;
 
-        /* disallow opening more than one writable handle to a PF */
-        if (pf_mode & PF_FILE_MODE_WRITE) {
-            if (pf->writable_fd >= 0) {
-                log_error("file_open(%s): disallowing concurrent writable handle\n", path);
-                ret = -PAL_ERROR_DENIED;
-                goto out;
-            }
+        if ((pf_mode & PF_FILE_MODE_WRITE) && pf->writable_fd >= 0) {
+            log_error("file_open(%s): disallowing concurrent writable handle on protected file.\n",
+                      hdl->file.realpath);
+            ret = -PAL_ERROR_DENIED;
+            goto fail;
         }
 
-        ret = -PAL_ERROR_DENIED;
-
-        /* the protected files should be regular files (seekable) */
-        if (!hdl->file.seekable) {
-            log_error("file_open(%s): disallowing non-seekable file handle\n", path);
-            goto out;
+        fd = ocall_open(uri, flags, share);
+        if (fd < 0) {
+            ret = unix_to_pal_error(fd);
+            goto fail;
         }
 
-        pf = load_protected_file(path, (int*)&hdl->file.fd, st.st_size, pf_mode, pf_create, pf);
-        if (pf) {
-            pf->refcount++;
-            if (pf_mode & PF_FILE_MODE_WRITE) {
-                pf->writable_fd = fd;
-            }
-        } else {
-            log_error("load_protected_file(%s, %d) failed\n", path, hdl->file.fd);
-            goto out;
-        }
-    } else {
-        sgx_chunk_hash_t* chunk_hashes;
-        uint64_t total;
-        void* umem;
-        ret = load_trusted_file(hdl, &chunk_hashes, &total, create, &umem);
+        ret = ocall_fstat(fd, &st);
         if (ret < 0) {
-            log_error("Accessing file:%s is denied (%s). This file is not trusted or allowed."
-                      " Trusted files should be regular files (seekable).\n", hdl->file.realpath,
-                      pal_strerror(ret));
-            goto out;
+            ret = unix_to_pal_error(ret);
+            goto fail;
         }
 
-        if (chunk_hashes && total) {
-            assert(umem);
+        hdl->file.fd = fd;
+        hdl->file.seekable = !S_ISFIFO(st.st_mode);
+
+        pf = load_protected_file(hdl->file.realpath, (int*)&hdl->file.fd, st.st_size, pf_mode,
+                                 pf_create, pf);
+        if (!pf) {
+            log_error("load_protected_file(%s, %d) failed.\n", hdl->file.realpath, hdl->file.fd);
+            ret = -PAL_ERROR_DENIED;
+            goto fail;
         }
 
-        hdl->file.chunk_hashes = (PAL_PTR)chunk_hashes;
-        hdl->file.total = total;
-        hdl->file.umem  = umem;
+        if (pf_mode & PF_FILE_MODE_WRITE) {
+            pf->writable_fd = fd;
+        }
+
+        pf->refcount++;
+        *handle = hdl;
+        return 0;
     }
+
+    assert(tf); /* at this point, we want to open a trusted or allowed file */
+
+    if (create && !tf->allowed) {
+        log_error("file_open(%s): disallowing create/write/append on trusted file.\n",
+                hdl->file.realpath);
+        ret = -PAL_ERROR_DENIED;
+        goto fail;
+    }
+
+    fd = ocall_open(uri, flags, share);
+    if (fd < 0) {
+        ret = unix_to_pal_error(fd);
+        goto fail;
+    }
+
+    ret = ocall_fstat(fd, &st);
+    if (ret < 0) {
+        ret = unix_to_pal_error(ret);
+        goto fail;
+    }
+
+    hdl->file.fd = fd;
+    hdl->file.seekable = !S_ISFIFO(st.st_mode);
+    hdl->file.total = st.st_size;
+
+    sgx_chunk_hash_t* chunk_hashes;
+    uint64_t total;
+    void* umem;
+    ret = load_trusted_or_allowed_file(tf, hdl, create, &chunk_hashes, &total, &umem);
+    if (ret < 0) {
+        log_error("load_trusted_or_allowed_file(%s, %d) failed.\n", hdl->file.realpath,
+                  hdl->file.fd);
+        goto fail;
+    }
+
+    hdl->file.chunk_hashes = (PAL_PTR)chunk_hashes;
+    hdl->file.total = total;
+    hdl->file.umem  = umem;
 
     *handle = hdl;
-    ret = 0;
+    return 0;
 
-out:
-    if (ret != 0) {
-        if (pf && pf->context && pf->refcount == 0)
-            unload_protected_file(pf);
+fail:
+    if (pf && pf->context && pf->refcount == 0)
+        unload_protected_file(pf);
 
-        free(hdl);
-        if (fd >= 0)
-            ocall_close(fd);
-    }
+    if (fd >= 0)
+        ocall_close(fd);
+
+    free(hdl);
     return ret;
 }
 

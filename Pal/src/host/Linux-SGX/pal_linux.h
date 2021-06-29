@@ -105,20 +105,6 @@ bool is_tsc_usable(void);
 uint64_t get_tsc_hz(void);
 void init_tsc(void);
 
-/*!
- * \brief check if the file to be opened is trusted or allowed, according to the manifest
- *
- * \param file              file handle to be opened
- * \param chunk_hashes_ptr  array of hashes over file chunks
- * \param size_ptr          returns size of opened file
- * \param create            whether this file is newly created
- * \param umem              untrusted memory address at which the file is loaded
- *
- * \return 0 on success, negative error code on failure
- */
-int load_trusted_file(PAL_HANDLE file, sgx_chunk_hash_t** chunk_hashes_ptr, uint64_t* size_ptr,
-                      int create, void** umem);
-
 enum {
     FILE_CHECK_POLICY_STRICT = 0,
     FILE_CHECK_POLICY_ALLOW_ALL_BUT_LOG,
@@ -127,6 +113,59 @@ enum {
 int init_file_check_policy(void);
 
 int get_file_check_policy(void);
+
+/* TODO: Move trusted/allowed files implementation in separate file `enclave_tf.c` */
+
+/* For each file that requires authentication (specified in the manifest as "sgx.trusted_files"), a
+ * SHA256 hash is generated and stored in the manifest, signed and verified as part of the enclave's
+ * crypto measurement. When user opens such a file, Graphene loads the whole file, calculates its
+ * SHA256 hash, and checks against the corresponding hash in the manifest. If the hashes do not
+ * match, the file access will be rejected.
+ *
+ * During the generation of the SHA256 hash, a 128-bit hash (truncated SHA256) is also generated for
+ * each chunk (of size TRUSTED_CHUNK_SIZE) in the file. The per-chunk hashes are used for partial
+ * verification in future reads, to avoid re-verifying the whole file again or the need of caching
+ * file contents.
+ *
+ * Perhaps confusingly, but the below struct describes not only "sgx.trusted_files" but also
+ * "sgx.allowed_files". For allowed files, `allowed = true`, `chunk_hashes = NULL`, and `uri` can be
+ * not only a file but also a directory.
+ */
+DEFINE_LIST(trusted_file);
+struct trusted_file {
+    LIST_TYPE(trusted_file) list;
+    uint64_t size;
+    bool allowed;
+    sgx_file_hash_t file_hash;      /* hash over the whole file, must be the same as in manifest */
+    sgx_chunk_hash_t* chunk_hashes; /* array of hashes over separate file chunks */
+    size_t uri_len;
+    char uri[]; /* must be NULL-terminated */
+};
+
+/*!
+ * \brief Get trusted/allowed file struct, if corresponding path entry exists in the manifest
+ *
+ * \param path  Normalized path to search for trusted/allowed files
+ *
+ * \return trusted/allowed file struct if found, NULL otherwise
+ */
+struct trusted_file* get_trusted_or_allowed_file(const char* path);
+
+/*!
+ * \brief Open the file as trusted or allowed, according to the manifest
+ *
+ * \param tf                trusted file struct corresponding to this file
+ * \param file              file handle to be opened
+ * \param create            whether this file is newly created
+ * \param chunk_hashes_ptr  array of hashes over file chunks
+ * \param size_ptr          returns size of opened file
+ * \param umem              untrusted memory address at which the file is loaded
+ *
+ * \return 0 on success, negative error code on failure
+ */
+int load_trusted_or_allowed_file(struct trusted_file* tf, PAL_HANDLE file, int create,
+                                 sgx_chunk_hash_t** chunk_hashes_ptr, uint64_t* size_ptr,
+                                 void** umem);
 
 /*!
  * \brief Copy and check file contents from untrusted outside buffer to in-enclave buffer
@@ -154,8 +193,6 @@ int get_file_check_policy(void);
 int copy_and_verify_trusted_file(const char* path, uint8_t* buf, const void* umem,
                                  off_t aligned_offset, off_t aligned_end, off_t offset, off_t end,
                                  sgx_chunk_hash_t* chunk_hashes, size_t file_size);
-
-int register_trusted_child(const char* uri, const char* mr_enclave_str);
 
 int init_enclave(void);
 void init_untrusted_slab_mgr(void);
