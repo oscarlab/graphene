@@ -27,6 +27,8 @@ typedef uint8_t pf_mac_t[PF_MAC_SIZE];
 typedef uint8_t pf_key_t[PF_KEY_SIZE];
 typedef uint8_t pf_keyid_t[32]; /* key derivation material */
 
+extern pf_key_t g_pf_mrenclave_key;
+extern pf_key_t g_pf_mrsigner_key;
 extern pf_key_t g_pf_wrap_key;
 extern bool g_pf_wrap_key_set;
 

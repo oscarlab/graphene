@@ -37,6 +37,9 @@ sgx.allowed_files.tmp_dir = "file:tmp/"
 sgx.allowed_files.root = "file:root" # for getdents test
 sgx.allowed_files.testfile = "file:testfile" # for mmap_file test
 
+# for protected_file test
+sgx.protected_mrenclave_files.pffile = "file:protected_file.dat"
+
 sgx.thread_num = 16
 
 sgx.nonpie_binary = true

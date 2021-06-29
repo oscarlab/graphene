@@ -488,7 +488,9 @@ Protected files
 ::
 
     sgx.protected_files_key = "[16-byte hex value]"
-    sgx.protected_files.[identifier] = "[URI]"
+    sgx.protected_files.[identifier]           = "[URI]"
+    sgx.protected_mrenclave_files.[identifier] = "[URI]"
+    sgx.protected_mrsigner_files.[identifier]  = "[URI]"
 
 This syntax specifies the files that are encrypted on disk and transparently
 decrypted when accessed by Graphene or by application running inside Graphene.
@@ -507,6 +509,16 @@ size is limited to 260 bytes.
 ``sgx.protected_files_key`` specifies the wrap (master) encryption key and must
 be used only for debugging purposes. In production environments, this key must
 be provisioned to the enclave using local/remote attestation.
+
+``sgx.protected_files`` are encrypted using the wrap (master) encryption key;
+they are well-suited for input files encrypted by the user and sent to the
+deployment platform as well as for output files sent back to the user and
+decrypted at the user side. ``sgx.protected_mrenclave_files`` are encrypted
+using the SGX sealing key based on the MRENCLAVE identity of the enclave; they
+are useful to allow only the same enclave (on the same platform) to unseal
+files. ``sgx.protected_mrsigner_files`` are encrypted using the SGX sealing key
+based on the MRSIGNER identity of the enclave; they are useful to allow all
+enclaves from the same signer (but on the same platform) to unseal files.
 
 File check policy
 ^^^^^^^^^^^^^^^^^
