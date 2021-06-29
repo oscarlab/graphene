@@ -17,8 +17,8 @@ following command to install the required packages (Ubuntu-specific):
 
 ## Building hello.jar
 
-Run `javac hello.java`
-Run `jar cvfm hello.jar hello.mf hello.class`
+    javac hello.java
+    jar cvfm hello.jar hello.mf hello.class
 
 ## Building for graphene-direct
 
