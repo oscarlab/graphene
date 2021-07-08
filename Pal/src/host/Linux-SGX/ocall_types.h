@@ -4,7 +4,6 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <sys/types.h>
 
 #include "linux_types.h"
 #include "pal.h"

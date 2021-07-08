@@ -24,11 +24,11 @@
 #include "cpu.h"
 #include "ecall_types.h"
 #include "ocall_types.h"
-#include "pal_linux.h"
 #include "rpc_queue.h"
 #include "sgx_enclave.h"
 #include "sgx_internal.h"
 #include "sgx_log.h"
+#include "sgx_tls.h"
 #include "ucontext.h"
 
 #if defined(__x86_64__)

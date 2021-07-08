@@ -1,0 +1,11 @@
+[wrap-file]
+directory = tomlc99-5be06807ad5f2230cad99e15380c4f4076c9dd83
+source_url = https://github.com/cktan/tomlc99/archive/5be06807ad5f2230cad99e15380c4f4076c9dd83.tar.gz
+source_fallback_url = https://packages.grapheneproject.io/distfiles/tomlc99-5be06807ad5f2230cad99e15380c4f4076c9dd83.tar.gz
+source_filename = tomlc99-5be06807ad5f2230cad99e15380c4f4076c9dd83.tar.gz
+source_hash = ad61a51ec85f3f25a123292088e363f384dc924527004f044641c28cbaed445c
+
+# TODO after meson 0.55 (focal EOL), patch_directory
+patch_url = http://example.invalid
+patch_filename = tomlc99-5be06807ad5f2230cad99e15380c4f4076c9dd83-wrap.tar
+patch_hash = 4a62130675c88f5ab34a35bf5bae2c5a1f7f9ba65836519e9c6500e6be6dd145

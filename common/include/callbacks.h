@@ -38,8 +38,10 @@ noreturn void pal_abort(void);
 #define abort() pal_abort()
 
 #else
-void _log(int level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
-noreturn void abort(void);
+/* untrusted PAL, we have glibc */
+void pal_log(int level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+#define _log(level, format...) pal_log(level, format)
+#include <stdlib.h> /* for abort(3) */
 #endif
 
 #endif /* COMMON_CALLBACKS_H */

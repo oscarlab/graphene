@@ -84,6 +84,7 @@ Table of Contents
    devel/howto-doc
    devel/coding-style
    devel/setup
+   devel/meson
    devel/debugging
    devel/benchmarks
    devel/performance

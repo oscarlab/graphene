@@ -1,6 +1,7 @@
 SGX tools
 =========
 
+.. TODO move this to Documentation/manpages
 
 SGX availability checker
 ------------------------

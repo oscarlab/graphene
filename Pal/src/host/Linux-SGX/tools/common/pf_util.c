@@ -3,6 +3,7 @@
  *                         Rafal Wojdyla <omeg@invisiblethingslab.com>
  */
 
+#define _GNU_SOURCE
 #define _LARGEFILE64_SOURCE
 
 #include "pf_util.h"

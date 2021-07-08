@@ -1,9 +1,7 @@
 stage('build') {
     sh '''
-        make ${MAKEOPTS}
-        make ${MAKEOPTS} -C Pal/src PAL_HOST=Skeleton
+        make -C LibOS
     '''
-
     try {
         sh '''
             meson build \
@@ -25,7 +23,4 @@ stage('build') {
     ''').trim() + '/graphene'
 
     sh 'rm -rf build'
-
-    // prevent cheating and testing from repo
-    sh 'make ${MAKEOPTS} -C Runtime clean'
 }

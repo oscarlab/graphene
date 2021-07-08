@@ -64,7 +64,6 @@ GLIBC_DEPS = shim/include/arch/$(ARCH)/shim_entry_api.h
 
 .PHONY: all
 all: $(GLIBC_TARGET) $(GLIBC_RUNTIME)
-	$(MAKE) -C $(SHIM_DIR) all
 
 ifeq ($(findstring x86_64,$(SYS))$(findstring linux,$(SYS)),x86_64linux)
 

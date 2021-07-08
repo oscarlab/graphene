@@ -5,7 +5,6 @@
 #include <asm/stat.h>
 #include <linux/poll.h>
 #include <linux/socket.h>
-#include <sys/types.h>
 
 #include "linux_types.h"
 #include "pal_linux.h"

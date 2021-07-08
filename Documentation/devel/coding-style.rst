@@ -174,10 +174,19 @@ Meson
    be in following lines, indented by 4 spaces.
 
 #. Otherwise, whitespace should generally follow PEP8 instead of meson suggested
-   style (i.e., no space inside parens, no space before ``:``).
+   style, i.e.
 
-#. Variables named ``_prog`` refer to things obtained from ``find_program()``.
-   Auxiliary commands should reside in ``Scripts/``, and the variable name is
-   tied to the script name (see :file:`meson.build` there). The scripts should
-   be written in Python except for things that clearly benefit from being
-   written in ``sh``.
+   - no space inside parens;
+   - no space before ``:`` where it means keyword argument or a |~| key in a |~|
+     dict;
+   - ``:`` in ``foreach`` should be surrounded by spaces, because it means
+     ``in``.
+
+#. Variable names in some cases should end with a particular suffix:
+
+   - ``_prog`` variables refer to things obtained from ``find_program()``.
+     Auxiliary commands should reside in ``Scripts/``, and the variable name is
+     tied to the script name (see :file:`meson.build` there). The scripts should
+     be written in Python except for things that clearly benefit from being
+     written in ``sh``.
+   - ``_dep`` should contain ``dependency()``, ``declared_dependency()`` etc.

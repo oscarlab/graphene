@@ -1,5 +1,4 @@
-#include "pal_linux.h"
-#include "pal_security.h"
+#include <stddef.h>
 
 int ecall_enclave_start(char* libpal_uri, char* args, size_t args_size, char* env, size_t env_size);
 

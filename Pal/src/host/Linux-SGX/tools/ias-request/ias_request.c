@@ -3,6 +3,8 @@
  *                    Rafal Wojdyla <omeg@invisiblethingslab.com>
  */
 
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -144,8 +146,8 @@ int main(int argc, char* argv[]) {
     char* advisory_path = NULL;
     char* gid           = NULL;
     char* sigrl_path    = NULL;
-    char* report_url    = IAS_URL_REPORT;
-    char* sigrl_url     = IAS_URL_SIGRL;
+    char* report_url    = (char*)IAS_URL_REPORT;
+    char* sigrl_url     = (char*)IAS_URL_SIGRL;
     endianness_t endian = ENDIAN_LSB;
 
     // parse command line

@@ -6,6 +6,8 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>

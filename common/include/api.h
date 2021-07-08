@@ -187,6 +187,8 @@ int atoi(const char* nptr);
 long int atol(const char* nptr);
 
 int islower(int c);
+int isupper(int c);
+int tolower(int c);
 int toupper(int c);
 int isalpha(int c);
 int isdigit(int c);

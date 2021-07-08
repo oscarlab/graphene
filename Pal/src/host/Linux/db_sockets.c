@@ -42,6 +42,8 @@
    address */
 #define PAL_SOCKADDR_SIZE 96
 
+#define DEFAULT_BACKLOG 2048
+
 static size_t addr_size(const struct sockaddr* addr) {
     switch (addr->sa_family) {
         case AF_INET:

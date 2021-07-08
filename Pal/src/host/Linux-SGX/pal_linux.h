@@ -9,7 +9,15 @@
 
 #include "api.h"
 #include "assert.h"
+
+/*
+ * XXX this ifdef is because there is no mbedtls linked in loader; this should be fixed by cleaning
+ * up this header which became a garbage bin for everything that didn't have a better place
+ */
+#ifdef IN_ENCLAVE
 #include "crypto.h"
+#endif /* IN_ENCLAVE */
+
 #include "enclave_ocalls.h"
 #include "linux_types.h"
 #include "log.h"
@@ -44,8 +52,6 @@ extern struct pal_linux_state {
     /* enclave */
     const char* runtime_dir;
 } g_linux_state;
-
-#define DEFAULT_BACKLOG 2048
 
 #define ACCESS_R 4
 #define ACCESS_W 2
@@ -300,19 +306,7 @@ int _DkStreamSecureSave(LIB_SSL_CONTEXT* ssl_ctx, const uint8_t** obuf, size_t* 
 #ifndef SIGCHLD
 #define SIGCHLD 17
 #endif
-
-#define ARCH_VFORK()                                                                 \
-    (g_pal_enclave.pal_sec.in_gdb                                                    \
-         ? INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK | SIGCHLD, 0, NULL, NULL) \
-         : INLINE_SYSCALL(clone, 4, CLONE_VM | CLONE_VFORK, 0, NULL, NULL))
-#else
-#define ARCH_VFORK() \
-    (INLINE_SYSCALL(clone, 4, CLONE_VM|CLONE_VFORK, 0, NULL, NULL))
 #endif
-
-int sgx_create_process(size_t nargs, const char** args, int* stream_fd, const char* manifest);
-
-int clone(int (*__fn)(void* __arg), void* __child_stack, int __flags, const void* __arg, ...);
 
 #endif /* IN_ENCLAVE */
 

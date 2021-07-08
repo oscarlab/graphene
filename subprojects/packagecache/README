@@ -1,0 +1,8 @@
+To change something in those files (using cJSON-1.7.12 as an example):
+
+    ./unpack.sh cJSON-1.7.12-wrap.tar
+    cd cJSON-1.7.12; vim ...
+    ./pack.sh cJSON-1.7.12/
+    git add cJSON-1.7.12.tar ../cJSON-1.7.12.wrap
+
+Esp. ./pack.sh is important, as it will take care of checksum in wrap file.

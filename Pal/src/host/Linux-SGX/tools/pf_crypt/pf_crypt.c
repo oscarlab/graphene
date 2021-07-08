@@ -3,7 +3,10 @@
  *                         Rafal Wojdyla <omeg@invisiblethingslab.com>
  */
 
+#define _GNU_SOURCE
+
 #include <getopt.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "pf_util.h"

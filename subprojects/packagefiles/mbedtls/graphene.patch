@@ -2,7 +2,7 @@
 # progress via issue https://github.com/ARMmbed/mbedtls/issues/3141.
 
 diff --git a/library/ssl_tls.c b/library/ssl_tls.c
-index e367fbd9cdd42c81b108a92037b1b16d562a6f55..e9524f66ba4203e7654b1023656c1830c7a01010 100644
+index e367fbd9c..e9524f66b 100644
 --- a/library/ssl_tls.c
 +++ b/library/ssl_tls.c
 @@ -6235,12 +6235,14 @@ int mbedtls_ssl_context_save( mbedtls_ssl_context *ssl,
@@ -92,3 +92,16 @@ index e367fbd9cdd42c81b108a92037b1b16d562a6f55..e9524f66ba4203e7654b1023656c1830
      /* mbedtls_ssl_reset() leaves the handshake sub-structure allocated,
       * which we don't want - otherwise we'd end up freeing the wrong transform
       * by calling mbedtls_ssl_handshake_wrapup_free_hs_transform()
+diff --git a/include/mbedtls/config.h b/include/mbedtls/config.h
+index d370dbff5..b0b3f02ef 100644
+--- a/include/mbedtls/config.h
++++ b/include/mbedtls/config.h
+@@ -2620,7 +2620,7 @@
+  * Requires: MBEDTLS_AES_C or MBEDTLS_DES_C
+  *
+  */
+-//#define MBEDTLS_CMAC_C
++#define MBEDTLS_CMAC_C
+ 
+ /**
+  * \def MBEDTLS_CTR_DRBG_C

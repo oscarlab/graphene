@@ -47,7 +47,7 @@ static char* g_api_key    = NULL;
 static char* g_report_url = NULL;
 static char* g_sigrl_url  = NULL;
 
-static int init_from_env(char** ptr, const char* env_name, char* default_val) {
+static int init_from_env(char** ptr, const char* env_name, const char* default_val) {
     assert(ptr == &g_api_key || ptr == &g_report_url || ptr == &g_sigrl_url);
 
     if (*ptr) {
@@ -60,7 +60,7 @@ static int init_from_env(char** ptr, const char* env_name, char* default_val) {
         if (!default_val)
             return MBEDTLS_ERR_X509_BAD_INPUT_DATA;
 
-        *ptr = default_val;
+        *ptr = (char*)default_val;
         return 0;
     }
 
