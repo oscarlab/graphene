@@ -110,4 +110,11 @@ stage('test-direct') {
             make check
         '''
     }
+    timeout(time: 5, unit: 'MINUTES') {
+        sh '''
+            cd Examples/sqlite
+            make ${MAKEOPTS} all
+            make ${MAKEOPTS} regression
+        '''
+    }
 }

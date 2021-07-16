@@ -1,0 +1,47 @@
+# This is a general manifest template for running SQLite.
+#
+# This manifest was prepared and tested on Ubuntu 20.04.
+loader.preload = "file:{{ graphene.libos }}"
+libos.entrypoint = "{{ execdir }}/sqlite3"
+
+# Read application arguments directly from the command line. Don't use this on production!
+loader.insecure__use_cmdline_argv = true
+
+loader.log_level = "{{ log_level }}"
+
+# Environment variables
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}"
+loader.env.PATH = "{{ execdir }}"
+# Set HOME to suppress "warning: cannot find home directory; cannot read ~/.sqliterc"
+loader.env.HOME = "/"
+
+# Mounted FSes. The following "chroot" FSes mount a part of the host FS into the
+# guest. Other parts of the host FS will not be available in the guest.
+
+# Default glibc files, mounted from the Runtime directory in GRAPHENEDIR.
+fs.mount.lib.type = "chroot"
+fs.mount.lib.path = "/lib"
+fs.mount.lib.uri = "file:{{ graphene.runtimedir() }}"
+
+# Host-level libraries (e.g., /lib/x86_64-linux-gnu) required by SQLite3
+fs.mount.lib64.type = "chroot"
+fs.mount.lib64.path = "{{ arch_libdir }}"
+fs.mount.lib64.uri = "file:{{ arch_libdir }}"
+
+# Mount sqlite3 binary
+fs.mount.sqlite3.type = "chroot"
+fs.mount.sqlite3.path = "{{ execdir }}/sqlite3"
+fs.mount.sqlite3.uri = "file:{{ execdir }}/sqlite3"
+
+# SGX general options
+
+sgx.enclave_size = "256M"
+sgx.thread_num = 4
+
+# SGX trusted files
+
+sgx.trusted_files.sqlite3 = "file:{{ execdir }}/sqlite3"
+sgx.trusted_files.runtime = "file:{{ graphene.runtimedir() }}/"
+sgx.trusted_files.arch_libdir = "file:{{ arch_libdir }}/"
+
+sgx.allowed_files.scripts = "file:scripts/"

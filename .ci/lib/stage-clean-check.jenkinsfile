@@ -25,6 +25,7 @@ stage('clean-check') {
         make -C Examples/apache distclean
         make -C Examples/blender distclean
         make -C Examples/r distclean
+        make -C Examples/sqlite distclean
         make -C Pal/src PAL_HOST=Skeleton clean
 
         make -C Examples/ra-tls-mbedtls distclean

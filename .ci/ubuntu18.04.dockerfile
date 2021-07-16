@@ -57,6 +57,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3-scipy \
     r-base-core \
     shellcheck \
+    sqlite3 \
     texinfo \
     wget \
     zlib1g \

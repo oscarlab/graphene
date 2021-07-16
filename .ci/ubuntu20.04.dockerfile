@@ -60,6 +60,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     r-base-core \
     shellcheck \
     sphinx-doc \
+    sqlite3 \
     texinfo \
     wget \
     zlib1g \

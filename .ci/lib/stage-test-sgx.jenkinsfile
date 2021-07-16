@@ -103,6 +103,13 @@ stage('test-sgx') {
     }
     timeout(time: 5, unit: 'MINUTES') {
         sh '''
+            cd Examples/sqlite
+            make ${MAKEOPTS} all
+            make ${MAKEOPTS} regression
+        '''
+    }
+    timeout(time: 5, unit: 'MINUTES') {
+        sh '''
             # test SGX remote attestation only on Ubuntu 18.04 to keep internet requests to minimum
             .ci/isdistro bionic || exit 0
 
