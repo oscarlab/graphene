@@ -95,6 +95,7 @@ typedef struct pal_handle {
             PAL_BOL tcp_cork;
             PAL_BOL tcp_keepalive;
             PAL_BOL tcp_nodelay;
+            PAL_BOL ipv6_v6only;
         } sock;
 
         struct {

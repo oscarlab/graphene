@@ -220,7 +220,7 @@ static int socket_parse_uri(char* uri, struct sockaddr** bind_addr, size_t* bind
 }
 
 /* fill in the PAL handle based on the file descriptors and address given. */
-static inline PAL_HANDLE socket_create_handle(int type, int fd, int options,
+static inline PAL_HANDLE socket_create_handle(int type, int fd, int create, int options,
                                               struct sockaddr* bind_addr, size_t bind_addrlen,
                                               struct sockaddr* dest_addr, size_t dest_addrlen) {
     PAL_HANDLE hdl =
@@ -251,6 +251,11 @@ static inline PAL_HANDLE socket_create_handle(int type, int fd, int options,
 
     hdl->sock.nonblocking = (options & PAL_OPTION_NONBLOCK) ? PAL_TRUE : PAL_FALSE;
     hdl->sock.linger      = 0;
+    hdl->sock.ipv6_v6only = 0;
+
+    if (type == pal_type_tcpsrv || type == pal_type_udpsrv) {
+        hdl->sock.ipv6_v6only = create & PAL_CREATE_DUALSTACK ? 0 : 1;
+    }
 
     if (type == pal_type_tcpsrv) {
         hdl->sock.receivebuf = 0;
@@ -341,7 +346,8 @@ static int tcp_listen(PAL_HANDLE* handle, char* uri, int create, int options) {
         goto failed;
     }
 
-    *handle = socket_create_handle(pal_type_tcpsrv, fd, options, bind_addr, bind_addrlen, NULL, 0);
+    *handle = socket_create_handle(pal_type_tcpsrv, fd, create, options, bind_addr, bind_addrlen,
+                                   /*dest_addr=*/NULL, /*dest_addrlen=*/0);
     if (!*handle) {
         ret = -PAL_ERROR_NOMEM;
         goto failed;
@@ -383,8 +389,8 @@ static int tcp_accept(PAL_HANDLE handle, PAL_HANDLE* client) {
     struct sockaddr* dest_addr = (struct sockaddr*)&buffer;
     size_t dest_addrlen = addrlen;
 
-    *client = socket_create_handle(pal_type_tcp, newfd, 0, bind_addr, bind_addrlen, dest_addr,
-                                   dest_addrlen);
+    *client = socket_create_handle(pal_type_tcp, newfd, /*create=*/0, /*options=*/0, bind_addr,
+                                   bind_addrlen, dest_addr, dest_addrlen);
 
     if (!(*client)) {
         ret = -PAL_ERROR_NOMEM;
@@ -463,8 +469,8 @@ static int tcp_connect(PAL_HANDLE* handle, char* uri, int options) {
             bind_addr = NULL;
     }
 
-    *handle = socket_create_handle(pal_type_tcp, fd, options, bind_addr, bind_addrlen, dest_addr,
-                                   dest_addrlen);
+    *handle = socket_create_handle(pal_type_tcp, fd, /*create=*/0, options, bind_addr, bind_addrlen,
+                                   dest_addr, dest_addrlen);
 
     if (!(*handle)) {
         ret = -PAL_ERROR_NOMEM;
@@ -614,7 +620,8 @@ static int udp_bind(PAL_HANDLE* handle, char* uri, int create, int options) {
         }
     }
 
-    *handle = socket_create_handle(pal_type_udpsrv, fd, options, bind_addr, bind_addrlen, NULL, 0);
+    *handle = socket_create_handle(pal_type_udpsrv, fd, create, options, bind_addr, bind_addrlen,
+                                   /*dest_addr=*/NULL, /*dest_addrlen=*/0);
 
     if (!(*handle)) {
         ret = -ENOMEM;
@@ -674,7 +681,7 @@ static int udp_connect(PAL_HANDLE* handle, char* uri, int create, int options) {
         }
     }
 
-    *handle = socket_create_handle(dest_addr ? pal_type_udp : pal_type_udpsrv, fd, options,
+    *handle = socket_create_handle(dest_addr ? pal_type_udp : pal_type_udpsrv, fd, create, options,
                                    bind_addr, bind_addrlen, dest_addr, dest_addrlen);
 
     if (!(*handle)) {
@@ -930,6 +937,7 @@ static int socket_attrquerybyhdl(PAL_HANDLE handle, PAL_STREAM_ATTR* attr) {
     attr->socket.tcp_cork       = handle->sock.tcp_cork;
     attr->socket.tcp_keepalive  = handle->sock.tcp_keepalive;
     attr->socket.tcp_nodelay    = handle->sock.tcp_nodelay;
+    attr->socket.ipv6_v6only    = handle->sock.ipv6_v6only;
 
     /* get number of bytes available for reading (doesn't make sense for listening sockets) */
     attr->pending_size = 0;
@@ -967,6 +975,10 @@ static int socket_attrsetbyhdl(PAL_HANDLE handle, PAL_STREAM_ATTR* attr) {
             return unix_to_pal_error(ret);
 
         handle->sock.nonblocking = attr->nonblocking;
+    }
+
+    if (attr->socket.ipv6_v6only != handle->sock.ipv6_v6only) {
+        /* ignore setting v6_only explicitly -- this option is set once during listen/bind */
     }
 
     if (IS_HANDLE_TYPE(handle, tcpsrv)) {

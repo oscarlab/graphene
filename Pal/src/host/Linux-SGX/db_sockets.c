@@ -257,6 +257,7 @@ static inline PAL_HANDLE socket_create_handle(int type, int fd, int options,
     hdl->sock.tcp_cork       = sock_options->tcp_cork;
     hdl->sock.tcp_keepalive  = sock_options->tcp_keepalive;
     hdl->sock.tcp_nodelay    = sock_options->tcp_nodelay;
+    hdl->sock.ipv6_v6only    = sock_options->ipv6_v6only;
     return hdl;
 }
 
@@ -284,6 +285,8 @@ static int tcp_listen(PAL_HANDLE* handle, char* uri, int create, int options) {
     sock_options.reuseaddr = 1; /* sockets are always set as reusable in Graphene */
 
     int ipv6_v6only = create & PAL_CREATE_DUALSTACK ? 0 : 1;
+    sock_options.ipv6_v6only = ipv6_v6only;
+
     ret = ocall_listen(bind_addr->sa_family, sock_type(SOCK_STREAM, options), 0, ipv6_v6only,
                        bind_addr, &bind_addrlen, &sock_options);
     if (ret < 0)
@@ -459,6 +462,8 @@ static int udp_bind(PAL_HANDLE* handle, char* uri, int create, int options) {
     sock_options.reuseaddr = 1; /* sockets are always set as reusable in Graphene */
 
     int ipv6_v6only = create & PAL_CREATE_DUALSTACK ? 0 : 1;
+    sock_options.ipv6_v6only = ipv6_v6only;
+
     ret = ocall_listen(bind_addr->sa_family, sock_type(SOCK_DGRAM, options), 0, ipv6_v6only,
                        bind_addr, &bind_addrlen, &sock_options);
     if (ret < 0)
@@ -493,6 +498,8 @@ static int udp_connect(PAL_HANDLE* handle, char* uri, int create, int options) {
     sock_options.reuseaddr = 1; /* sockets are always set as reusable in Graphene */
 
     int ipv6_v6only = create & PAL_CREATE_DUALSTACK ? 0 : 1;
+    sock_options.ipv6_v6only = ipv6_v6only;
+
     ret = ocall_connect(dest_addr ? dest_addr->sa_family : AF_INET, sock_type(SOCK_DGRAM, options),
                         0, ipv6_v6only, dest_addr, dest_addrlen, bind_addr, &bind_addrlen,
                         &sock_options);
@@ -698,6 +705,7 @@ static int socket_attrquerybyhdl(PAL_HANDLE handle, PAL_STREAM_ATTR* attr) {
     attr->socket.tcp_cork       = handle->sock.tcp_cork;
     attr->socket.tcp_keepalive  = handle->sock.tcp_keepalive;
     attr->socket.tcp_nodelay    = handle->sock.tcp_nodelay;
+    attr->socket.ipv6_v6only    = handle->sock.ipv6_v6only;
 
     /* get number of bytes available for reading (doesn't make sense for listening sockets) */
     attr->pending_size = 0;
@@ -733,6 +741,10 @@ static int socket_attrsetbyhdl(PAL_HANDLE handle, PAL_STREAM_ATTR* attr) {
             return unix_to_pal_error(ret);
 
         handle->sock.nonblocking = attr->nonblocking;
+    }
+
+    if (attr->socket.ipv6_v6only != handle->sock.ipv6_v6only) {
+        /* ignore setting v6_only explicitly -- this option is set once during listen/bind */
     }
 
     if (HANDLE_TYPE(handle) != pal_type_tcpsrv) {

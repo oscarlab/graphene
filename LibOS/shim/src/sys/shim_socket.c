@@ -48,6 +48,11 @@
 
 #define AF_UNSPEC 0
 
+struct __kernel_linger {
+    int l_onoff;
+    int l_linger;
+};
+
 static size_t minimal_addrlen(int domain) {
     switch (domain) {
         case AF_INET:
@@ -60,55 +65,73 @@ static size_t minimal_addrlen(int domain) {
 }
 
 static int inet_parse_addr(int domain, int type, const char* uri, struct addr_inet* bind,
-                           struct addr_inet* conn);
+                           struct addr_inet* conn) {
+    char* ip_str;
+    char* port_str;
+    char* next_str;
+    int ip_len = 0;
 
-static int __process_pending_options(struct shim_handle* hdl);
+    if (!(next_str = strchr(uri, ':')))
+        return -EINVAL;
+    next_str++;
 
-long shim_do_socket(int family, int type, int protocol) {
-    struct shim_handle* hdl = get_new_handle();
-    if (!hdl)
-        return -ENOMEM;
+    enum { UDP, UDPSRV, TCP, TCPSRV } prefix;
 
-    hdl->type = TYPE_SOCK;
-    hdl->fs = &socket_builtin_fs;
-    hdl->flags = type & SOCK_NONBLOCK ? O_NONBLOCK : 0;
-    hdl->acc_mode = 0;
+    if (strstartswith(uri, URI_PREFIX_UDP))
+        prefix = UDP;
+    else if (strstartswith(uri, URI_PREFIX_UDP_SRV))
+        prefix = UDPSRV;
+    else if (strstartswith(uri, URI_PREFIX_TCP))
+        prefix = TCP;
+    else if (strstartswith(uri, URI_PREFIX_TCP_SRV))
+        prefix = TCPSRV;
+    else
+        return -EINVAL;
 
-    struct shim_sock_handle* sock = &hdl->info.sock;
-    sock->domain    = family;
-    sock->sock_type = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
-    sock->protocol  = protocol;
+    if ((prefix == UDP || prefix == UDPSRV) && type != SOCK_DGRAM)
+        return -EINVAL;
 
-    int ret = -ENOSYS;
+    if ((prefix == TCP || prefix == TCPSRV) && type != SOCK_STREAM)
+        return -EINVAL;
 
-    switch (sock->domain) {
-        case AF_UNIX:   // Local communication
-        case AF_INET:   // IPv4 Internet protocols          ip(7)
-        case AF_INET6:  // IPv6 Internet protocols
-            break;
+    for (int round = 0; (ip_str = next_str); round++) {
+        if (ip_str[0] == '[') {
+            ip_str++;
+            if (domain != AF_INET6)
+                return -EINVAL;
+            if (!(port_str = strchr(ip_str, ']')))
+                return -EINVAL;
+            ip_len = port_str - ip_str;
+            port_str++;
+            if (*port_str != ':')
+                return -EINVAL;
+        } else {
+            if (domain != AF_INET)
+                return -EINVAL;
+            if (!(port_str = strchr(ip_str, ':')))
+                return -EINVAL;
+            ip_len = port_str - ip_str;
+        }
 
-        default:
-            log_warning("shim_socket: unknown socket domain %d", sock->domain);
-            goto err;
+        port_str++;
+        next_str = strchr(port_str, ':');
+        if (next_str)
+            next_str++;
+
+        struct addr_inet* addr = round ? conn : bind;
+
+        if (domain == AF_INET) {
+            inet_pton4(ip_str, ip_len, &addr->addr.v4);
+            addr->ext_port = atoi(port_str);
+        }
+
+        if (domain == AF_INET6) {
+            inet_pton6(ip_str, ip_len, &addr->addr.v6);
+            addr->ext_port = atoi(port_str);
+        }
     }
 
-    switch (sock->sock_type) {
-        case SOCK_STREAM:  // TCP
-            break;
-        case SOCK_DGRAM:  // UDP
-            hdl->acc_mode = MAY_READ | MAY_WRITE;
-            break;
-
-        default:
-            log_warning("shim_socket: unknown socket type %d", sock->sock_type);
-            goto err;
-    }
-
-    sock->sock_state = SOCK_CREATED;
-    ret = set_new_fd_handle(hdl, type & SOCK_CLOEXEC ? FD_CLOEXEC : 0, NULL);
-err:
-    put_handle(hdl);
-    return ret;
+    return 0;
 }
 
 static int unix_create_uri(char* buf, size_t buf_size, enum shim_sock_state state, char* name,
@@ -412,20 +435,185 @@ static int create_socket_uri(struct shim_handle* hdl) {
     return -EPROTONOSUPPORT;
 }
 
-/* hdl->lock must be held */
-static bool __socket_is_ipv6_v6only(struct shim_handle* hdl) {
-    assert(locked(&hdl->lock));
+/* updates value of attribute identified by `level` plus `optname` in the `attr` set (i.e., update
+ * happens at LibOS-internal level) */
+static bool update_attr(PAL_STREAM_ATTR* attr, int level, int optname, char* optval) {
+    assert(attr);
 
-    assert(hdl->type == TYPE_SOCK);
-    struct shim_sock_option* o = hdl->info.sock.pending_options;
-    while (o) {
-        if (o->level == IPPROTO_IPV6 && o->optname == IPV6_V6ONLY) {
-            int* intval = (int*)o->optval;
-            return *intval ? 1 : 0;
+    bool need_set_attr = false;
+    int intval         = *((int*)optval);
+    PAL_BOL bolval     = intval ? PAL_TRUE : PAL_FALSE;
+
+    if (level == SOL_SOCKET) {
+        switch (optname) {
+            case SO_KEEPALIVE:
+                if (bolval != attr->socket.tcp_keepalive) {
+                    attr->socket.tcp_keepalive = bolval;
+                    need_set_attr = true;
+                }
+                break;
+            case SO_LINGER: {
+                struct __kernel_linger* l = (struct __kernel_linger*)optval;
+                int linger                = l->l_onoff ? l->l_linger : 0;
+                if (linger != (int)attr->socket.linger) {
+                    attr->socket.linger = linger;
+                    need_set_attr = true;
+                }
+                break;
+            }
+            case SO_RCVBUF:
+                if (intval != (int)attr->socket.receivebuf) {
+                    attr->socket.receivebuf = intval;
+                    need_set_attr = true;
+                }
+                break;
+            case SO_SNDBUF:
+                if (intval != (int)attr->socket.sendbuf) {
+                    attr->socket.sendbuf = intval;
+                    need_set_attr = true;
+                }
+                break;
+            case SO_RCVTIMEO:
+                if (intval != (int)attr->socket.receivetimeout) {
+                    attr->socket.receivetimeout = intval;
+                    need_set_attr = true;
+                }
+                break;
+            case SO_SNDTIMEO:
+                if (intval != (int)attr->socket.sendtimeout) {
+                    attr->socket.sendtimeout = intval;
+                    need_set_attr = true;
+                }
+                break;
+            case SO_REUSEADDR:
+                /* PAL always does REUSEADDR, no need to check or update */
+                break;
         }
-        o = o->next;
     }
-    return false;
+
+    if (level == SOL_TCP) {
+        switch (optname) {
+            case TCP_CORK:
+                if (bolval != attr->socket.tcp_cork) {
+                    attr->socket.tcp_cork = bolval;
+                    need_set_attr = true;
+                }
+                break;
+            case TCP_NODELAY:
+                if (bolval != attr->socket.tcp_nodelay) {
+                    attr->socket.tcp_nodelay = bolval;
+                    need_set_attr = true;
+                }
+                break;
+        }
+    }
+
+    if (level == IPPROTO_IPV6) {
+        switch (optname) {
+            case IPV6_V6ONLY:
+                if (intval != attr->socket.ipv6_v6only) {
+                    attr->socket.ipv6_v6only = intval;
+                    need_set_attr = true;
+                }
+                break;
+        }
+    }
+
+    return need_set_attr;
+}
+
+/* updates value of attribute identified by `level` plus `optname` in the `attr` set and then in the
+ * corresponding PAL handle `pal_handle` (i.e., update happens both at LibOS level and PAL level) */
+static int update_attr_and_pal(PAL_HANDLE pal_handle, int level, int optname, char* optval) {
+    if (level != SOL_SOCKET && level != SOL_TCP && level != IPPROTO_IPV6)
+        return -ENOPROTOOPT;
+
+    if (level == SOL_SOCKET) {
+        switch (optname) {
+            case SO_ACCEPTCONN:
+            case SO_DOMAIN:
+            case SO_ERROR:
+            case SO_PROTOCOL:
+            case SO_TYPE:
+                return -EPERM;
+            case SO_KEEPALIVE:
+            case SO_LINGER:
+            case SO_RCVBUF:
+            case SO_SNDBUF:
+            case SO_RCVTIMEO:
+            case SO_SNDTIMEO:
+            case SO_REUSEADDR:
+                break;
+            default:
+                return -ENOPROTOOPT;
+        }
+    }
+
+    if (level == IPPROTO_IPV6 && optname != IPV6_V6ONLY)
+        return -ENOPROTOOPT;
+
+    if (level == SOL_TCP && optname != TCP_CORK && optname != TCP_NODELAY)
+        return -ENOPROTOOPT;
+
+    PAL_STREAM_ATTR attr;
+    int ret = DkStreamAttributesQueryByHandle(pal_handle, &attr);
+    if (ret < 0)
+        return pal_to_unix_errno(ret);
+
+    bool need_set_attr = update_attr(&attr, level, optname, optval);
+    if (need_set_attr) {
+        int ret = DkStreamAttributesSetByHandle(pal_handle, &attr);
+        if (ret < 0)
+            return pal_to_unix_errno(ret);
+    }
+
+    return 0;
+}
+
+/* updates all pending attributes on `hdl` both at LibOS level and PAL level */
+static int update_attr_with_pending_options(struct shim_handle* hdl) {
+    assert(hdl->type == TYPE_SOCK);
+    assert(hdl->pal_handle);
+    struct shim_sock_handle* sock = &hdl->info.sock;
+
+    if (!sock->pending_options)
+        return 0;
+
+    struct shim_sock_option* o = sock->pending_options;
+    while (o) {
+        int ret = update_attr_and_pal(hdl->pal_handle, o->level, o->optname, o->optval);
+        if (ret < 0)
+            return ret;
+
+        struct shim_sock_option* next = o->next;
+        o = next;
+    }
+
+    /* updated handle options with pending options; pending options are not needed anymore */
+    o = sock->pending_options;
+    while (o) {
+        struct shim_sock_option* next = o->next;
+        free(o);
+        o = next;
+    }
+    sock->pending_options = NULL;
+
+    return 0;
+}
+
+static void populate_attr_with_defaults(PAL_STREAM_ATTR* attr) {
+    /* Linux default recv/send buffer sizes for new sockets */
+    attr->socket.receivebuf = 212992;
+    attr->socket.sendbuf    = 212992;
+
+    attr->socket.linger         = 0;
+    attr->socket.receivetimeout = 0;
+    attr->socket.sendtimeout    = 0;
+    attr->socket.tcp_cork       = PAL_FALSE;
+    attr->socket.tcp_keepalive  = PAL_FALSE;
+    attr->socket.tcp_nodelay    = PAL_FALSE;
+
+    attr->socket.ipv6_v6only = 0;
 }
 
 static void hash_dentry_path(struct shim_dentry* dent, char* buf, size_t size) {
@@ -436,6 +624,53 @@ static void hash_dentry_path(struct shim_dentry* dent, char* buf, size_t size) {
     memcpy(hashbytes, &hash, sizeof(hash));
 
     BYTES2HEXSTR(hashbytes, buf, size);
+}
+
+long shim_do_socket(int family, int type, int protocol) {
+    struct shim_handle* hdl = get_new_handle();
+    if (!hdl)
+        return -ENOMEM;
+
+    hdl->type = TYPE_SOCK;
+    hdl->fs = &socket_builtin_fs;
+    hdl->flags = type & SOCK_NONBLOCK ? O_NONBLOCK : 0;
+    hdl->acc_mode = 0;
+
+    struct shim_sock_handle* sock = &hdl->info.sock;
+    sock->domain    = family;
+    sock->sock_type = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+    sock->protocol  = protocol;
+
+    int ret = -ENOSYS;
+
+    switch (sock->domain) {
+        case AF_UNIX:   // Local communication
+        case AF_INET:   // IPv4 Internet protocols          ip(7)
+        case AF_INET6:  // IPv6 Internet protocols
+            break;
+
+        default:
+            log_warning("shim_socket: unknown socket domain %d", sock->domain);
+            goto err;
+    }
+
+    switch (sock->sock_type) {
+        case SOCK_STREAM:  // TCP
+            break;
+        case SOCK_DGRAM:  // UDP
+            hdl->acc_mode = MAY_READ | MAY_WRITE;
+            break;
+
+        default:
+            log_warning("shim_socket: unknown socket type %d", sock->sock_type);
+            goto err;
+    }
+
+    sock->sock_state = SOCK_CREATED;
+    ret = set_new_fd_handle(hdl, type & SOCK_CLOEXEC ? FD_CLOEXEC : 0, NULL);
+err:
+    put_handle(hdl);
+    return ret;
 }
 
 long shim_do_bind(int sockfd, struct sockaddr* addr, int _addrlen) {
@@ -499,9 +734,16 @@ long shim_do_bind(int sockfd, struct sockaddr* addr, int _addrlen) {
         goto out;
 
     int create_flags = PAL_CREATE_DUALSTACK;
-    if (__socket_is_ipv6_v6only(hdl)) {
-        /* application requests IPV6_V6ONLY, this socket is not dual-stack */
-        create_flags &= ~PAL_CREATE_DUALSTACK;
+    struct shim_sock_option* o = hdl->info.sock.pending_options;
+    while (o) {
+        if (o->level == IPPROTO_IPV6 && o->optname == IPV6_V6ONLY) {
+            if (*((int*)o->optval)) {
+                /* application requests IPV6_V6ONLY, this socket is not dual-stack */
+                create_flags &= ~PAL_CREATE_DUALSTACK;
+            }
+            break;
+        }
+        o = o->next;
     }
 
     PAL_HANDLE pal_hdl = NULL;
@@ -510,7 +752,6 @@ long shim_do_bind(int sockfd, struct sockaddr* addr, int _addrlen) {
 
     if (ret < 0) {
         ret = (ret == -PAL_ERROR_STREAMEXIST) ? -EADDRINUSE : pal_to_unix_errno(ret);
-        log_error("bind: invalid handle returned");
         goto out;
     }
 
@@ -542,7 +783,7 @@ long shim_do_bind(int sockfd, struct sockaddr* addr, int _addrlen) {
     }
 
     hdl->pal_handle = pal_hdl;
-    __process_pending_options(hdl);
+    update_attr_with_pending_options(hdl);
     _update_epolls(hdl);
     ret = 0;
 
@@ -560,76 +801,6 @@ out:
     unlock(&hdl->lock);
     put_handle(hdl);
     return ret;
-}
-
-static int inet_parse_addr(int domain, int type, const char* uri, struct addr_inet* bind,
-                           struct addr_inet* conn) {
-    char* ip_str;
-    char* port_str;
-    char* next_str;
-    int ip_len = 0;
-
-    if (!(next_str = strchr(uri, ':')))
-        return -EINVAL;
-    next_str++;
-
-    enum { UDP, UDPSRV, TCP, TCPSRV } prefix;
-
-    if (strstartswith(uri, URI_PREFIX_UDP))
-        prefix = UDP;
-    else if (strstartswith(uri, URI_PREFIX_UDP_SRV))
-        prefix = UDPSRV;
-    else if (strstartswith(uri, URI_PREFIX_TCP))
-        prefix = TCP;
-    else if (strstartswith(uri, URI_PREFIX_TCP_SRV))
-        prefix = TCPSRV;
-    else
-        return -EINVAL;
-
-    if ((prefix == UDP || prefix == UDPSRV) && type != SOCK_DGRAM)
-        return -EINVAL;
-
-    if ((prefix == TCP || prefix == TCPSRV) && type != SOCK_STREAM)
-        return -EINVAL;
-
-    for (int round = 0; (ip_str = next_str); round++) {
-        if (ip_str[0] == '[') {
-            ip_str++;
-            if (domain != AF_INET6)
-                return -EINVAL;
-            if (!(port_str = strchr(ip_str, ']')))
-                return -EINVAL;
-            ip_len = port_str - ip_str;
-            port_str++;
-            if (*port_str != ':')
-                return -EINVAL;
-        } else {
-            if (domain != AF_INET)
-                return -EINVAL;
-            if (!(port_str = strchr(ip_str, ':')))
-                return -EINVAL;
-            ip_len = port_str - ip_str;
-        }
-
-        port_str++;
-        next_str = strchr(port_str, ':');
-        if (next_str)
-            next_str++;
-
-        struct addr_inet* addr = round ? conn : bind;
-
-        if (domain == AF_INET) {
-            inet_pton4(ip_str, ip_len, &addr->addr.v4);
-            addr->ext_port = atoi(port_str);
-        }
-
-        if (domain == AF_INET6) {
-            inet_pton6(ip_str, ip_len, &addr->addr.v6);
-            addr->ext_port = atoi(port_str);
-        }
-    }
-
-    return 0;
 }
 
 long shim_do_listen(int sockfd, int backlog) {
@@ -820,7 +991,7 @@ long shim_do_connect(int sockfd, struct sockaddr* addr, int _addrlen) {
     }
 
     hdl->acc_mode = MAY_READ | MAY_WRITE;
-    __process_pending_options(hdl);
+    update_attr_with_pending_options(hdl);
     ret = 0;
 
 out:
@@ -1741,183 +1912,9 @@ out:
     return ret;
 }
 
-struct __kernel_linger {
-    int l_onoff;
-    int l_linger;
-};
-
-static void __populate_addr_with_defaults(PAL_STREAM_ATTR* attr) {
-    /* Linux default recv/send buffer sizes for new sockets */
-    attr->socket.receivebuf = 212992;
-    attr->socket.sendbuf    = 212992;
-
-    attr->socket.linger         = 0;
-    attr->socket.receivetimeout = 0;
-    attr->socket.sendtimeout    = 0;
-    attr->socket.tcp_cork       = PAL_FALSE;
-    attr->socket.tcp_keepalive  = PAL_FALSE;
-    attr->socket.tcp_nodelay    = PAL_FALSE;
-}
-
-static bool __update_attr(PAL_STREAM_ATTR* attr, int level, int optname, char* optval) {
-    assert(attr);
-
-    bool need_set_attr = false;
-    int intval         = *((int*)optval);
-    PAL_BOL bolval     = intval ? PAL_TRUE : PAL_FALSE;
-
-    if (level == SOL_SOCKET) {
-        switch (optname) {
-            case SO_KEEPALIVE:
-                if (bolval != attr->socket.tcp_keepalive) {
-                    attr->socket.tcp_keepalive = bolval;
-                    need_set_attr = true;
-                }
-                break;
-            case SO_LINGER: {
-                struct __kernel_linger* l = (struct __kernel_linger*)optval;
-                int linger                = l->l_onoff ? l->l_linger : 0;
-                if (linger != (int)attr->socket.linger) {
-                    attr->socket.linger = linger;
-                    need_set_attr = true;
-                }
-                break;
-            }
-            case SO_RCVBUF:
-                if (intval != (int)attr->socket.receivebuf) {
-                    attr->socket.receivebuf = intval;
-                    need_set_attr = true;
-                }
-                break;
-            case SO_SNDBUF:
-                if (intval != (int)attr->socket.sendbuf) {
-                    attr->socket.sendbuf = intval;
-                    need_set_attr = true;
-                }
-                break;
-            case SO_RCVTIMEO:
-                if (intval != (int)attr->socket.receivetimeout) {
-                    attr->socket.receivetimeout = intval;
-                    need_set_attr = true;
-                }
-                break;
-            case SO_SNDTIMEO:
-                if (intval != (int)attr->socket.sendtimeout) {
-                    attr->socket.sendtimeout = intval;
-                    need_set_attr = true;
-                }
-                break;
-            case SO_REUSEADDR:
-                /* PAL always does REUSEADDR, no need to check or update */
-                break;
-        }
-    }
-
-    if (level == SOL_TCP) {
-        switch (optname) {
-            case TCP_CORK:
-                if (bolval != attr->socket.tcp_cork) {
-                    attr->socket.tcp_cork = bolval;
-                    need_set_attr = true;
-                }
-                break;
-            case TCP_NODELAY:
-                if (bolval != attr->socket.tcp_nodelay) {
-                    attr->socket.tcp_nodelay = bolval;
-                    need_set_attr = true;
-                }
-                break;
-        }
-    }
-
-    return need_set_attr;
-}
-
-static int __do_setsockopt(struct shim_handle* hdl, int level, int optname, char* optval,
-                           PAL_STREAM_ATTR* attr) {
-    if (level != SOL_SOCKET && level != SOL_TCP && level != IPPROTO_IPV6)
-        return -ENOPROTOOPT;
-
-    if (level == SOL_SOCKET) {
-        switch (optname) {
-            case SO_ACCEPTCONN:
-            case SO_DOMAIN:
-            case SO_ERROR:
-            case SO_PROTOCOL:
-            case SO_TYPE:
-                return -EPERM;
-            case SO_KEEPALIVE:
-            case SO_LINGER:
-            case SO_RCVBUF:
-            case SO_SNDBUF:
-            case SO_RCVTIMEO:
-            case SO_SNDTIMEO:
-            case SO_REUSEADDR:
-                break;
-            default:
-                return -ENOPROTOOPT;
-        }
-    }
-
-    if (level == IPPROTO_IPV6 && optname != IPV6_V6ONLY)
-        return -ENOPROTOOPT;
-
-    if (level == SOL_TCP && optname != TCP_CORK && optname != TCP_NODELAY)
-        return -ENOPROTOOPT;
-
-    PAL_STREAM_ATTR local_attr;
-    if (!attr) {
-        attr = &local_attr;
-        int ret = DkStreamAttributesQueryByHandle(hdl->pal_handle, attr);
-        if (ret < 0) {
-            return pal_to_unix_errno(ret);
-        }
-    }
-
-    bool need_set_attr = __update_attr(attr, level, optname, optval);
-    if (need_set_attr) {
-        int ret = DkStreamAttributesSetByHandle(hdl->pal_handle, attr);
-        if (ret < 0) {
-            return pal_to_unix_errno(ret);
-        }
-    }
-
-    return 0;
-}
-
-static int __process_pending_options(struct shim_handle* hdl) {
-    assert(hdl->type == TYPE_SOCK);
-    struct shim_sock_handle* sock = &hdl->info.sock;
-
-    if (!sock->pending_options)
-        return 0;
-
-    PAL_STREAM_ATTR attr;
-
-    int ret = DkStreamAttributesQueryByHandle(hdl->pal_handle, &attr);
-    if (ret < 0) {
-        return pal_to_unix_errno(ret);
-    }
-
-    struct shim_sock_option* o = sock->pending_options;
-
-    while (o) {
-        PAL_STREAM_ATTR tmp = attr;
-
-        int ret = __do_setsockopt(hdl, o->level, o->optname, o->optval, &tmp);
-
-        if (!ret)
-            attr = tmp;
-
-        struct shim_sock_option* next = o->next;
-        free(o);
-        o = next;
-    }
-
-    return 0;
-}
-
 long shim_do_setsockopt(int fd, int level, int optname, char* optval, int optlen) {
+    int ret;
+
     if (optlen < (int)sizeof(int))
         return -EINVAL;
 
@@ -1927,8 +1924,6 @@ long shim_do_setsockopt(int fd, int level, int optname, char* optval, int optlen
     struct shim_handle* hdl = get_fd_handle(fd, NULL, NULL);
     if (!hdl)
         return -EBADF;
-
-    int ret = 0;
 
     if (hdl->type != TYPE_SOCK) {
         ret = -ENOTSOCK;
@@ -1956,11 +1951,12 @@ long shim_do_setsockopt(int fd, int level, int optname, char* optval, int optlen
         o->optname = optname;
         o->optlen  = optlen;
         memcpy(&o->optval, optval, optlen);
+
+        ret = 0;
         goto out_locked;
     }
 
-    ret = __do_setsockopt(hdl, level, optname, optval, NULL);
-
+    ret = update_attr_and_pal(hdl->pal_handle, level, optname, optval);
 out_locked:
     unlock(&hdl->lock);
 out:
@@ -2061,11 +2057,11 @@ long shim_do_getsockopt(int fd, int level, int optname, char* optval, int* optle
     if (!hdl->pal_handle) {
         /* it is possible that there is no underlying PAL handle for hdl, e.g., socket() before
          * bind(); in this case, augment default attrs with pending_options and skip quering PAL */
-        __populate_addr_with_defaults(&attr);
+        populate_attr_with_defaults(&attr);
 
         struct shim_sock_option* o = sock->pending_options;
         while (o) {
-            __update_attr(&attr, o->level, o->optname, o->optval);
+            update_attr(&attr, o->level, o->optname, o->optval);
             o = o->next;
         }
     } else {
@@ -2120,7 +2116,7 @@ long shim_do_getsockopt(int fd, int level, int optname, char* optval, int* optle
     if (level == IPPROTO_IPV6) {
         switch (optname) {
             case IPV6_V6ONLY:
-                *intval = __socket_is_ipv6_v6only(hdl) ? 1 : 0;
+                *intval = attr.socket.ipv6_v6only ? 1 : 0;
                 break;
         }
     }

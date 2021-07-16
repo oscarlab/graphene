@@ -126,6 +126,7 @@ struct sockopt {
     int tcp_cork : 1;
     int tcp_keepalive : 1;
     int tcp_nodelay : 1;
+    int ipv6_v6only : 1;
 };
 
 /* POSIX.1g specifies this type name for the `sa_family' member.  */

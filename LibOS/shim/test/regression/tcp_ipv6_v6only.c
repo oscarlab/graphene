@@ -61,6 +61,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    int ipv6_v6only_value = 42;
+    socklen_t ipv6_v6only_value_len = sizeof(ipv6_v6only_value);
+    if (getsockopt(socket_ipv6, IPPROTO_IPV6, IPV6_V6ONLY, &ipv6_v6only_value,
+                   &ipv6_v6only_value_len) < 0) {
+        perror("getsockopt(IPV6_V6ONLY)");
+        return 1;
+    }
+
+    if (ipv6_v6only_value != 0 || ipv6_v6only_value_len != sizeof(ipv6_v6only_value)) {
+        fprintf(stderr, "getsockopt(IPV6_V6ONLY) returned unexpected value\n");
+        return 1;
+    }
+
     /* we must start listening on IPV6 socket to make it active and kick in Linux rules for bind()
      */
     if (listen(socket_ipv6, 3) < 0) {
