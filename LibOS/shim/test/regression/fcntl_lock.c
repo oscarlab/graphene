@@ -14,6 +14,7 @@
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,6 +57,7 @@ static const char* str_err(int err) {
     switch (err) {
         case EACCES: return "EACCES";
         case EAGAIN: return "EAGAIN";
+        case EINTR: return "EINTR";
         default: return "???";
     }
 }
@@ -92,33 +94,14 @@ static int try_fcntl(int cmd, struct flock* fl) {
     if (ret != -1 && ret != 0)
         errx(1, "fcntl returned unexpected value");
     if (ret == -1) {
-        /* We permit -1 only for F_SETLK, and only with EACCES or EAGAIN errors (which means the
-         * lock could not be placed immediately). */
-        if (!(cmd == F_SETLK && (errno == EACCES || errno == EAGAIN))) {
-            err(1, "fcntl");
+        if (errno == EINTR)
+            return ret;
+        if (cmd == F_SETLK && (errno == EACCES || errno == EAGAIN)) {
+            return ret;
         }
+        err(1, "fcntl");
     }
     return ret;
-}
-
-/* Wrapper for `try_fcntl`. Returns true if it succeeds (F_SETLK returns success, F_GETLK returns no
- * conflicting lock). */
-static bool try_lock(int cmd, int type, int whence, long int start, long int len) {
-    struct flock fl = {
-        .l_type = type,
-        .l_whence = whence,
-        .l_start = start,
-        .l_len = len,
-    };
-    int ret = try_fcntl(cmd, &fl);
-
-    if (cmd == F_GETLK) {
-        assert(ret == 0);
-
-        return fl.l_type == F_UNLCK;
-    } else {
-        return ret == 0;
-    }
 }
 
 /* Check whether F_GETLK returns the right conflicting lock. */
@@ -144,27 +127,81 @@ static void lock_check(int type, long int start, long int len, int conflict_type
 }
 
 static void unlock(long int start, long int len) {
-    if (!try_lock(F_SETLK, F_UNLCK, SEEK_SET, start, len))
-        errx(1, "unlock failed");
+    struct flock fl = {
+        .l_type = F_UNLCK,
+        .l_whence = SEEK_SET,
+        .l_start = start,
+        .l_len = len,
+    };
+    int ret;
+    do {
+        ret = try_fcntl(F_SETLK, &fl);
+    } while (ret == -1 && errno == -EINTR);
+    if (ret == -1)
+        errx(1, "unlocking failed");
 }
 
 static void lock(int type, long int start, long int len) {
     assert(type == F_RDLCK || type == F_WRLCK);
 
-    if (!try_lock(F_GETLK, type, SEEK_SET, start, len)
-            || !try_lock(F_SETLK, type, SEEK_SET, start, len))
+    struct flock fl = {
+        .l_type = type,
+        .l_whence = SEEK_SET,
+        .l_start = start,
+        .l_len = len,
+    };
+    int ret;
+    do {
+        ret = try_fcntl(F_SETLK, &fl);
+    } while (ret == -1 && errno == EINTR);
+    if (ret == -1)
         errx(1, "setting %s failed", str_type(type));
 }
 
 static void lock_wait_ok(int type, long int start, long int len) {
-    if (!try_lock(F_SETLKW, type, SEEK_SET, start, len))
-        errx(1, "waiting for %s failed", str_type(type));
+    assert(type == F_RDLCK || type == F_WRLCK);
+
+    struct flock fl = {
+        .l_type = type,
+        .l_whence = SEEK_SET,
+        .l_start = start,
+        .l_len = len,
+    };
+    int ret;
+    do {
+        ret = try_fcntl(F_SETLKW, &fl);
+    } while (ret == -1 && errno == EINTR);
+    if (ret == -1)
+        errx(1, "setting %s failed", str_type(type));
 }
 
 static void lock_fail(int type, long int start, long int len) {
-    if (try_lock(F_GETLK, type, SEEK_SET, start, len)
-            || try_lock(F_SETLK, type, SEEK_SET, start, len))
-        errx(1, "setting %s succeeded unexpectedly", str_type(type));
+    assert(type == F_RDLCK || type == F_WRLCK);
+
+    struct flock fl = {
+        .l_type = type,
+        .l_whence = SEEK_SET,
+        .l_start = start,
+        .l_len = len,
+    };
+    int ret;
+    do {
+        ret = try_fcntl(F_SETLK, &fl);
+    } while (ret == -1 && errno == EINTR);
+    if (ret == 0)
+        errx(1, "expected setting %s to fail", str_type(type));
+}
+
+static void lock_wait_eintr(int type, long int start, long int len) {
+    struct flock fl = {
+        .l_type = type,
+        .l_whence = SEEK_SET,
+        .l_start = start,
+        .l_len = len,
+    };
+    int ret = try_fcntl(F_SETLKW, &fl);
+    if (ret == 0 || errno != EINTR)
+        errx(1, "expected setting %s to fail with EINTR", str_type(type));
 }
 
 /*
@@ -371,6 +408,74 @@ static void test_parent_wait() {
     close_pipes(pipes);
 }
 
+/* Test: child waits for a lock, and the wait is interrupted by EINTR due to alarm. */
+static void test_child_eintr() {
+    printf("testing child EINTR...\n");
+    unlock(0, 0);
+
+    int pipes[2][2];
+    open_pipes(pipes);
+
+    lock(F_WRLCK, 0, 100);
+
+    pid_t pid = fork();
+    if (pid < 0)
+        err(1, "fork");
+
+    if (pid == 0) {
+        alarm(1);
+
+        lock_wait_eintr(F_WRLCK, 0, 100);
+        write_pipe(pipes[0]);
+        read_pipe(pipes[1]);
+        lock(F_WRLCK, 0, 100);
+        exit(0);
+    }
+
+    /* parent process: */
+
+    read_pipe(pipes[0]);
+    unlock(0, 100);
+    write_pipe(pipes[1]);
+
+    wait_for_child();
+    close_pipes(pipes);
+}
+
+/* Test: parent waits for a lock, and the wait is interrupted by EINTR due to alarm. */
+static void test_parent_eintr() {
+    printf("testing parent EINTR...\n");
+    unlock(0, 0);
+
+    int pipes[2][2];
+    open_pipes(pipes);
+
+    pid_t pid = fork();
+    if (pid < 0)
+        err(1, "fork");
+
+    if (pid == 0) {
+        lock(F_WRLCK, 0, 100);
+        write_pipe(pipes[0]);
+        read_pipe(pipes[1]);
+        unlock(0, 100);
+        write_pipe(pipes[0]);
+        exit(0);
+    }
+
+    /* parent process: */
+
+    read_pipe(pipes[0]);
+    alarm(1);
+    lock_wait_eintr(F_WRLCK, 0, 100);
+    write_pipe(pipes[1]);
+    read_pipe(pipes[0]);
+    lock(F_WRLCK, 0, 100);
+
+    wait_for_child();
+    close_pipes(pipes);
+}
+
 /* Test: check that a range until EOF (len == 0) is handled correctly. */
 static void test_range_with_eof() {
     printf("testing range with EOF...\n");
@@ -400,9 +505,15 @@ static void test_range_with_eof() {
     close_pipes(pipes);
 }
 
+static void alarm_handler(int signum) {
+    fprintf(stderr, "got signal %d\n", signum);
+    fflush(stderr);
+}
 
 int main(void) {
     setbuf(stdout, NULL);
+    if (signal(SIGALRM, &alarm_handler) < 0)
+        err(1, "signal");
 
     g_fd = open(TEST_FILE, O_RDWR | O_CREAT | O_TRUNC, 0600);
     if (g_fd < 0)
@@ -413,6 +524,8 @@ int main(void) {
     test_file_close();
     test_child_wait();
     test_parent_wait();
+    test_child_eintr();
+    test_parent_eintr();
     test_range_with_eof();
 
     if (close(g_fd) < 0)

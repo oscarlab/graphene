@@ -34,7 +34,6 @@ int init_fs_lock(void);
  * - The main process has to be able to look up the same file, so locking will not work for files in
  *   local-process-only filesystems (tmpfs).
  * - There is no deadlock detection (EDEADLK).
- * - The lock requests cannot be interrupted (EINTR).
  * - The locks work only on files that have a dentry (no pipes, sockets etc.)
  */
 
@@ -111,7 +110,23 @@ int posix_lock_clear_pid(IDTYPE pid);
  * to add a lock (-EAGAIN, -ENOMEM etc.) will be sent in the response instead.
  */
 int posix_lock_set_from_ipc(const char* path, struct posix_lock* pl, bool wait, IDTYPE vmid,
-                            unsigned long seq);
+                            uint64_t seq);
+
+/*!
+ * \brief Cancel a lock request (IPC handler)
+ *
+ * \param path absolute path for a file
+ * \param vmid target process for IPC response
+ * \param seq sequence number for IPC response
+ *
+ * Cancels the request previously added by `posix_lock_set_from_ipc`: if the request with given
+ * `vmid` and `seq` parameters is still unresolved, it is removed and a response with -EINTR is
+ * sent. If the request has been resolved in the meantime, nothing happens.
+ *
+ * This function should be called if the wait for IPC response has been interrupted. It ensures that
+ * a response will be sent immediately.
+ */
+int posix_lock_cancel_from_ipc(const char* path, IDTYPE vmid, uint64_t seq);
 
 /*!
  * \brief Check for conflicting locks on a file (IPC handler)

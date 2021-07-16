@@ -11,29 +11,30 @@
 #include "shim_lock.h"
 
 /*
- * Describes a pending request for a POSIX lock. After processing the request, the object is
- * removed, and a possible waiter is notified (see below).
+ * Describes a pending or resolved request for a POSIX lock.
  *
  * If the request is initiated by another process over IPC, `notify.vmid` and `notify.seq` should be
- * set to parameters of IPC message. After processing the request, IPC response will be sent.
+ * set to parameters of IPC message. After resolving the request, IPC response will be sent. The
+ * request will then be immediately deleted.
  *
  * If the request is initiated by process leader, `notify.vmid` should be set to 0, and
- * `notify.event` should be set to an event handle. After processing the request, the event will be
- * triggered, and `*notify.result` will be set to the result.
+ * `notify.event` should be set to an event handle. After resolving the request, the event will be
+ * triggered, `resolved` will be set to true, and `result` will be set to the result. The request
+ * will NOT be deleted; it is the responsibility of the waiting thread to delete it (after reading
+ * `result`).
  */
 DEFINE_LISTP(posix_lock_request);
 DEFINE_LIST(posix_lock_request);
 struct posix_lock_request {
     struct posix_lock pl;
+    bool resolved;
+    int result;
 
     struct {
         IDTYPE vmid;
-        unsigned int seq;
+        uint64_t seq;
 
-        /* Note that `event` and `result` are owned by the side making the request, and outlive this
-         * object (we delete it as soon as the request is processed). */
         PAL_HANDLE event;
-        int* result;
     } notify;
 
     LIST_TYPE(posix_lock_request) list;
@@ -128,7 +129,7 @@ static void posix_lock_dump(struct fs_lock* fs_lock) {
     buf_flush(&buf);
 }
 
-/* Removes `fs_lock` if it's not necessary (i.e. no locks are held or requested for a file). */
+/* Removes `fs_lock` if it's no longer necessary (i.e. there are no locks or lock requests). */
 static void fs_lock_gc(struct fs_lock* fs_lock) {
     assert(locked(&fs_lock->dent->lock));
     if (g_log_level >= LOG_LEVEL_TRACE)
@@ -176,6 +177,7 @@ static int posix_lock_add_request(struct fs_lock* fs_lock, struct posix_lock* pl
     if (!req)
         return -ENOMEM;
     req->pl = *pl;
+    req->resolved = false;
     LISTP_ADD(req, &fs_lock->posix_lock_requests, list);
     *out_req = req;
     return 0;
@@ -348,6 +350,34 @@ static int _posix_lock_set(struct fs_lock* fs_lock, struct posix_lock* pl) {
     return 0;
 }
 
+/* Resolve a request with given result. This involves notifying a waiter, and deleting the request
+ * if it's a remote one. */
+static void posix_lock_resolve(struct fs_lock* fs_lock, struct posix_lock_request* req,
+                               int result) {
+    assert(locked(&fs_lock->dent->lock));
+    assert(!req->resolved);
+    req->result = result;
+    req->resolved = true;
+
+    if (req->notify.vmid == 0) {
+        /* This is a local request: we set `req->notify.event`, and let the thread waiting for it
+         * handle the cleanup. */
+        assert(req->notify.event);
+        DkEventSet(req->notify.event);
+    } else {
+        /* This is a remote request: we send a response over IPC, and then delete the request. */
+        assert(!req->notify.event);
+        int ret = ipc_posix_lock_set_send_response(req->notify.vmid, req->notify.seq,
+                                                   req->result);
+        if (ret < 0) {
+            log_warning("posix lock: error sending result over IPC: %d", ret);
+        }
+
+        LISTP_DEL(req, &fs_lock->posix_lock_requests, list);
+        free(req);
+    }
+}
+
 /*
  * Process pending requests. This function should be called after any modification to the list of
  * locks, since we might have unblocked a request.
@@ -364,78 +394,48 @@ static void posix_lock_process_requests(struct fs_lock* fs_lock) {
         struct posix_lock_request* req;
         struct posix_lock_request* tmp;
         LISTP_FOR_EACH_ENTRY_SAFE(req, tmp, &fs_lock->posix_lock_requests, list) {
+            if (req->resolved)
+                continue;
+
             struct posix_lock* conflict = posix_lock_find_conflict(fs_lock, &req->pl);
-            if (!conflict) {
-                int result = _posix_lock_set(fs_lock, &req->pl);
-                LISTP_DEL(req, &fs_lock->posix_lock_requests, list);
+            if (conflict)
+                continue;
 
-                /* Notify the waiter that we processed their request. Note that the result might
-                 * still be a failure (-ENOMEM). */
-                if (req->notify.vmid == 0) {
-                    assert(req->notify.event);
-                    assert(req->notify.result);
-                    *req->notify.result = result;
-                    DkEventSet(req->notify.event);
-                } else {
-                    assert(!req->notify.event);
-                    assert(!req->notify.result);
-
-                    int ret = ipc_posix_lock_set_send_response(req->notify.vmid, req->notify.seq,
-                                                               result);
-                    if (ret < 0) {
-                        log_warning("posix lock: error sending result over IPC: %d", ret);
-                    }
-                }
-                free(req);
-                changed = true;
-            }
+            int result = _posix_lock_set(fs_lock, &req->pl);
+            posix_lock_resolve(fs_lock, req, result);
+            changed = true;
         }
     } while (changed);
 }
 
 /* Add/remove a lock if possible. On conflict, returns -EAGAIN (if `wait` is false) or adds a new
  * request (if `wait` is true). */
-static int posix_lock_set_or_add_request(struct shim_dentry* dent, struct posix_lock* pl, bool wait,
+static int posix_lock_set_or_add_request(struct fs_lock* fs_lock, struct posix_lock* pl, bool wait,
                                          struct posix_lock_request** out_req) {
-    assert(locked(&dent->lock));
+    assert(locked(&fs_lock->dent->lock));
 
-    struct fs_lock* fs_lock = NULL;
-    int ret = find_fs_lock(dent, /*create=*/pl->type != F_UNLCK, &fs_lock);
-    if (ret < 0)
-        goto out;
-    if (!fs_lock) {
-        assert(pl->type == F_UNLCK);
-        /* Nothing to unlock. */
-        return 0;
-    }
-
+    int ret;
     struct posix_lock* conflict = NULL;
     if (pl->type != F_UNLCK)
         conflict = posix_lock_find_conflict(fs_lock, pl);
     if (conflict) {
-        if (!wait) {
-            ret = -EAGAIN;
-            goto out;
-        }
+        if (!wait)
+            return -EAGAIN;
 
         struct posix_lock_request* req;
         ret = posix_lock_add_request(fs_lock, pl, &req);
         if (ret < 0)
-            goto out;
+            return ret;
 
         *out_req = req;
     } else {
         ret = _posix_lock_set(fs_lock, pl);
         if (ret < 0)
-            goto out;
+            return ret;
         posix_lock_process_requests(fs_lock);
         *out_req = NULL;
     }
-    ret = 0;
-out:
-    if (fs_lock)
-        fs_lock_gc(fs_lock);
-    return ret;
+    return 0;
 }
 
 int posix_lock_set(struct shim_dentry* dent, struct posix_lock* pl, bool wait) {
@@ -465,38 +465,66 @@ int posix_lock_set(struct shim_dentry* dent, struct posix_lock* pl, bool wait) {
 
     lock(&dent->lock);
 
-    PAL_HANDLE event = NULL;
+    struct fs_lock* fs_lock = NULL;
     struct posix_lock_request* req = NULL;
-    ret = posix_lock_set_or_add_request(dent, pl, wait, &req);
+
+    ret = find_fs_lock(dent, /*create=*/pl->type != F_UNLCK, &fs_lock);
+    if (ret < 0)
+        goto out;
+    if (!fs_lock) {
+        assert(pl->type == F_UNLCK);
+        /* Nothing to unlock. */
+        ret = 0;
+        goto out;
+    }
+
+    ret = posix_lock_set_or_add_request(fs_lock, pl, wait, &req);
     if (ret < 0)
         goto out;
     if (req) {
         /* `posix_lock_set_or_add_request` is allowed to add a request only if `wait` is true */
         assert(wait);
 
-        int result;
+        PAL_HANDLE event;
         ret = DkEventCreate(&event, /*init_signaled=*/false, /*auto_clear=*/false);
-        if (ret < 0)
+        if (ret < 0) {
+            ret = pal_to_unix_errno(ret);
             goto out;
+        }
+        req->notify.event = event;
         req->notify.vmid = 0;
         req->notify.seq = 0;
-        req->notify.event = event;
-        req->notify.result = &result;
 
         unlock(&dent->lock);
-        ret = object_wait_with_retry(event);
+        ret = DkEventWait(event, /*timeout=*/NULL);
         lock(&dent->lock);
-        if (ret < 0)
-            goto out;
 
-        ret = result;
+        /*
+         * After waiting and retaking the lock, `fs_lock` and `req` should still exist: `req` is
+         * only deleted by us, and `fs_lock` is deleted only if the list of requests is empty.
+         */
+
+        if (ret == 0) {
+            assert(req->resolved);
+        } else if (ret < 0 && ret != -PAL_ERROR_INTERRUPTED) {
+            log_warning("posix_lock_set: unexpected error from DkEventWait: %d\n", ret);
+        }
+
+        /*
+         * At this point, the request might not be resolved yet, in which case we need to return
+         * -EINTR. Either way, we delete the request.
+         */
+        ret = req->resolved ? req->result : -EINTR;
+        LISTP_DEL(req, &fs_lock->posix_lock_requests, list);
+        DkObjectClose(event);
+        free(req);
     } else {
         ret = 0;
     }
 out:
+    if (fs_lock)
+        fs_lock_gc(fs_lock);
     unlock(&dent->lock);
-    if (event)
-        DkObjectClose(event);
     return ret;
 }
 
@@ -504,18 +532,29 @@ int posix_lock_set_from_ipc(const char* path, struct posix_lock* pl, bool wait, 
                             unsigned long seq) {
     assert(!g_process_ipc_ids.leader_vmid);
 
-    struct shim_dentry* dent = NULL;
-    struct posix_lock_request* req = NULL;
+    struct shim_dentry* dent;
 
     int ret = path_lookupat(g_dentry_root, path, LOOKUP_NO_FOLLOW, &dent);
     if (ret < 0) {
         log_warning("posix_lock_set_from_ipc: error on dentry lookup for %s: %d", path, ret);
-        goto out;
+        return ret;
     }
 
     lock(&dent->lock);
-    ret = posix_lock_set_or_add_request(dent, pl, wait, &req);
-    unlock(&dent->lock);
+
+    struct posix_lock_request* req = NULL;
+    struct fs_lock* fs_lock = NULL;
+    ret = find_fs_lock(dent, /*create=*/pl->type != F_UNLCK, &fs_lock);
+    if (ret < 0)
+        goto out;
+    if (!fs_lock) {
+        assert(pl->type == F_UNLCK);
+        /* Nothing to unlock. */
+        ret = 0;
+        goto out;
+    }
+
+    ret = posix_lock_set_or_add_request(fs_lock, pl, wait, &req);
     if (ret < 0)
         goto out;
 
@@ -526,17 +565,62 @@ int posix_lock_set_from_ipc(const char* path, struct posix_lock* pl, bool wait, 
         req->notify.vmid = vmid;
         req->notify.seq = seq;
         req->notify.event = NULL;
-        req->notify.result = NULL;
     }
     ret = 0;
 out:
-    if (dent)
-        put_dentry(dent);
+    if (fs_lock)
+        fs_lock_gc(fs_lock);
+    unlock(&dent->lock);
+    put_dentry(dent);
     if (req) {
         /* We added a request, so response will be sent later. */
+        assert(ret == 0);
         return 0;
     }
     return ipc_posix_lock_set_send_response(vmid, seq, ret);
+}
+
+int posix_lock_cancel_from_ipc(const char* path, IDTYPE vmid, uint64_t seq) {
+    assert(!g_process_ipc_ids.leader_vmid);
+
+    struct shim_dentry* dent;
+    int ret = path_lookupat(g_dentry_root, path, LOOKUP_NO_FOLLOW, &dent);
+    if (ret < 0) {
+        log_warning("posix_lock_cancel_from_ipc: error on dentry lookup for %s: %d", path, ret);
+        return ret;
+    }
+
+    lock(&dent->lock);
+
+    struct fs_lock* fs_lock = NULL;
+    ret = find_fs_lock(dent, /*create=*/false, &fs_lock);
+    if (ret < 0)
+        goto out;
+    if (!fs_lock) {
+        /* No lock information, it looks like the request has already been resolved and deleted. */
+        ret = 0;
+        goto out;
+    }
+
+    struct posix_lock_request* req;
+    LISTP_FOR_EACH_ENTRY(req, &fs_lock->posix_lock_requests, list) {
+        if (req->notify.vmid == vmid && req->notify.seq == seq) {
+            /* This is a remote request, so it must still be unresolved, otherwise we would have
+             * deleted it already. */
+            assert(!req->resolved);
+
+            posix_lock_resolve(fs_lock, req, -EINTR);
+            break;
+        }
+    }
+
+    ret = 0;
+out:
+    if (fs_lock)
+        fs_lock_gc(fs_lock);
+    unlock(&dent->lock);
+    put_dentry(dent);
+    return ret;
 }
 
 int posix_lock_get(struct shim_dentry* dent, struct posix_lock* pl, struct posix_lock* out_pl) {

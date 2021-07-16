@@ -10,6 +10,26 @@
 #include "shim_fs_lock.h"
 #include "shim_ipc.h"
 
+static int cancel_posix_lock(IDTYPE dest, void* arg) {
+    struct shim_ipc_msg* lock_msg = arg;
+    char* path = ((struct shim_ipc_posix_lock*)lock_msg->data)->path;
+    size_t path_len = strlen(path);
+
+    struct shim_ipc_posix_lock_cancel msgin = {
+        /* Sequence number of the original message (set by
+         * `ipc_send_msg_and_get_response_with_cancel` before sending) */
+        .cancel_seq = lock_msg->header.seq,
+    };
+
+    size_t total_msg_size = get_ipc_msg_size(sizeof(msgin) + path_len + 1);
+    struct shim_ipc_msg* msg = __alloca(total_msg_size);
+    init_ipc_msg(msg, IPC_MSG_POSIX_LOCK_CANCEL, total_msg_size);
+    memcpy(msg->data, &msgin, sizeof(msgin));
+    memcpy(((struct shim_ipc_posix_lock_cancel*)&msg->data)->path, path, path_len + 1);
+
+    return ipc_send_message(dest, msg);
+}
+
 int ipc_posix_lock_set(const char* path, struct posix_lock* pl, bool wait) {
     assert(g_process_ipc_ids.leader_vmid);
 
@@ -30,7 +50,8 @@ int ipc_posix_lock_set(const char* path, struct posix_lock* pl, bool wait) {
     memcpy(((struct shim_ipc_posix_lock*)&msg->data)->path, path, path_len + 1);
 
     void* data;
-    int ret = ipc_send_msg_and_get_response(g_process_ipc_ids.leader_vmid, msg, &data);
+    int ret = ipc_send_msg_and_get_response_with_cancel(
+        g_process_ipc_ids.leader_vmid, msg, &cancel_posix_lock, msg, &data);
     if (ret < 0)
         return ret;
     int result = *(int*)data;
@@ -38,7 +59,7 @@ int ipc_posix_lock_set(const char* path, struct posix_lock* pl, bool wait) {
     return result;
 }
 
-int ipc_posix_lock_set_send_response(IDTYPE vmid, unsigned long seq, int result) {
+int ipc_posix_lock_set_send_response(IDTYPE vmid, uint64_t seq, int result) {
     assert(!g_process_ipc_ids.leader_vmid);
 
     size_t total_msg_size = get_ipc_msg_size(sizeof(result));
@@ -99,7 +120,7 @@ int ipc_posix_lock_clear_pid(IDTYPE pid) {
     return result;
 }
 
-int ipc_posix_lock_set_callback(IDTYPE src, void* data, unsigned long seq) {
+int ipc_posix_lock_set_callback(IDTYPE src, void* data, uint64_t seq) {
     struct shim_ipc_posix_lock* msgin = data;
     struct posix_lock pl = {
         .type = msgin->type,
@@ -111,7 +132,14 @@ int ipc_posix_lock_set_callback(IDTYPE src, void* data, unsigned long seq) {
     return posix_lock_set_from_ipc(msgin->path, &pl, msgin->wait, src, seq);
 }
 
-int ipc_posix_lock_get_callback(IDTYPE src, void* data, unsigned long seq) {
+int ipc_posix_lock_cancel_callback(IDTYPE src, void* data, uint64_t seq) {
+    __UNUSED(seq);
+
+    struct shim_ipc_posix_lock_cancel* msgin = data;
+    return posix_lock_cancel_from_ipc(msgin->path, src, msgin->cancel_seq);
+}
+
+int ipc_posix_lock_get_callback(IDTYPE src, void* data, uint64_t seq) {
     struct shim_ipc_posix_lock* msgin = data;
     struct posix_lock pl = {
         .type = msgin->type,
@@ -137,7 +165,7 @@ int ipc_posix_lock_get_callback(IDTYPE src, void* data, unsigned long seq) {
     return ipc_send_message(src, msg);
 }
 
-int ipc_posix_lock_clear_pid_callback(IDTYPE src, void* data, unsigned long seq) {
+int ipc_posix_lock_clear_pid_callback(IDTYPE src, void* data, uint64_t seq) {
     IDTYPE* pid = data;
     int result = posix_lock_clear_pid(*pid);
 

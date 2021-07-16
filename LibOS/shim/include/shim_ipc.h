@@ -34,6 +34,7 @@ enum {
     IPC_MSG_SYNC_CONFIRM_DOWNGRADE,
     IPC_MSG_SYNC_CONFIRM_CLOSE,
     IPC_MSG_POSIX_LOCK_SET,
+    IPC_MSG_POSIX_LOCK_CANCEL,
     IPC_MSG_POSIX_LOCK_GET,
     IPC_MSG_POSIX_LOCK_CLEAR_PID,
     IPC_MSG_CODE_BOUND,
@@ -120,6 +121,28 @@ int ipc_send_message(IDTYPE dest, struct shim_ipc_msg* msg);
  * discarded, but still awaited for.
  */
 int ipc_send_msg_and_get_response(IDTYPE dest, struct shim_ipc_msg* msg, void** resp);
+/*!
+ * \brief Send an IPC message and wait for a response (cancel on interrupt)
+ *
+ * \param dest vmid of the destination process
+ * \param msg message to send
+ * \param on_cancel callback to invoke when the wait is interrupted
+ * \param arg argument for the callback
+ * \param[out] resp upon successful return contains a pointer to the response
+ *
+ * A version of `ipc_send_msg_and_get_response` that allows canceling a request after the wait is
+ * interrupted. Intended for implementation of interruptible function calls.
+ *
+ * Behaves as `ipc_send_msg_and_get_response`, but after the wait for response is interrupted,
+ * invokes `on_cancel(dest, arg)`. If it succeeds, the wait is resumed. The callback is invoked only
+ * once: if the wait is interrupted again afterwards, the function keeps waiting.
+ *
+ * The \p on_cancel callback should return 0 on success, or a negative error code on failure. If
+ * the callback fails, the function does not resume the wait, but returns the error immediately.
+ */
+int ipc_send_msg_and_get_response_with_cancel(IDTYPE dest, struct shim_ipc_msg* msg,
+                                              int (*on_cancel)(IDTYPE, void*), void* arg,
+                                              void** resp);
 /*!
  * \brief Broadcast an IPC message
  *
@@ -269,6 +292,7 @@ int ipc_sync_confirm_close_callback(IDTYPE src, void* data, unsigned long seq);
 
 /*
  * POSIX_LOCK_SET: `struct shim_ipc_posix_lock` -> `int`
+ * POSIX_LOCK_CANCEL: `shim_ipc_posix_lock_cancel` (no response)
  * POSIX_LOCK_GET: `struct shim_ipc_posix_lock` -> `struct shim_ipc_posix_lock_resp`
  * POSIX_LOCK_CLEAR_PID: `IDTYPE` -> `int`
  */
@@ -281,6 +305,11 @@ struct shim_ipc_posix_lock {
     IDTYPE pid;
 
     bool wait;
+    char path[]; /* null-terminated */
+};
+
+struct shim_ipc_posix_lock_cancel {
+    uint64_t cancel_seq;
     char path[]; /* null-terminated */
 };
 
@@ -297,11 +326,12 @@ struct shim_ipc_posix_lock_resp {
 struct posix_lock;
 
 int ipc_posix_lock_set(const char* path, struct posix_lock* pl, bool wait);
-int ipc_posix_lock_set_send_response(IDTYPE vmid, unsigned long seq, int result);
+int ipc_posix_lock_set_send_response(IDTYPE vmid, uint64_t seq, int result);
 int ipc_posix_lock_get(const char* path, struct posix_lock* pl, struct posix_lock* out_pl);
 int ipc_posix_lock_clear_pid(IDTYPE pid);
-int ipc_posix_lock_set_callback(IDTYPE src, void* data, unsigned long seq);
-int ipc_posix_lock_get_callback(IDTYPE src, void* data, unsigned long seq);
-int ipc_posix_lock_clear_pid_callback(IDTYPE src, void* data, unsigned long seq);
+int ipc_posix_lock_set_callback(IDTYPE src, void* data, uint64_t seq);
+int ipc_posix_lock_cancel_callback(IDTYPE src, void* data, uint64_t seq);
+int ipc_posix_lock_get_callback(IDTYPE src, void* data, uint64_t seq);
+int ipc_posix_lock_clear_pid_callback(IDTYPE src, void* data, uint64_t seq);
 
 #endif /* SHIM_IPC_H_ */

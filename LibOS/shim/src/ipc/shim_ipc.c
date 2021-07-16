@@ -240,19 +240,30 @@ int ipc_send_message(IDTYPE dest, struct shim_ipc_msg* msg) {
     return ret;
 }
 
-static int wait_for_response(struct ipc_msg_waiter* waiter) {
+static int wait_for_response(struct ipc_msg_waiter* waiter, int (*on_cancel)(IDTYPE, void*),
+                             void* arg) {
     log_debug("Waiting for a response to %lu", waiter->seq);
 
     int ret = 0;
+    bool canceled = false;
     do {
         ret = pal_to_unix_errno(DkEventWait(waiter->event, /*timeout=*/NULL));
+        if (ret == -EINTR && on_cancel && !canceled) {
+            log_debug("Wait for response to %lu interrupted, canceling", waiter->seq);
+            int cancel_ret = on_cancel(waiter->dest, arg);
+            if (cancel_ret < 0)
+                return cancel_ret;
+            canceled = true;
+        }
     } while (ret == -EINTR);
 
     log_debug("Waiting finished: %d", ret);
     return ret;
 }
 
-int ipc_send_msg_and_get_response(IDTYPE dest, struct shim_ipc_msg* msg, void** resp) {
+int ipc_send_msg_and_get_response_with_cancel(IDTYPE dest, struct shim_ipc_msg* msg,
+                                              int (*on_cancel)(IDTYPE, void*), void* arg,
+                                              void** resp) {
     static uint64_t ipc_seq_counter = 1;
     uint64_t seq = __atomic_fetch_add(&ipc_seq_counter, 1, __ATOMIC_RELAXED);
     SET_UNALIGNED(msg->header.seq, seq);
@@ -276,7 +287,7 @@ int ipc_send_msg_and_get_response(IDTYPE dest, struct shim_ipc_msg* msg, void** 
         goto out;
     }
 
-    ret = wait_for_response(&waiter);
+    ret = wait_for_response(&waiter, on_cancel, arg);
     if (ret < 0) {
         goto out;
     }
@@ -299,6 +310,11 @@ out:
     unlock(&g_msg_waiters_tree_lock);
     free(waiter.response_data);
     return ret;
+}
+
+int ipc_send_msg_and_get_response(IDTYPE dest, struct shim_ipc_msg* msg, void** resp) {
+    return ipc_send_msg_and_get_response_with_cancel(dest, msg, /*on_cancel=*/NULL, /*arg=*/NULL,
+                                                     resp);
 }
 
 int ipc_response_callback(IDTYPE src, void* data, uint64_t seq) {

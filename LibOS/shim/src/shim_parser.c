@@ -203,7 +203,7 @@ struct parser_table {
                      parse_pointer_arg, parse_pointer_arg, parse_long_arg, parse_integer_arg}},
     [__NR_msgctl] = {.slow = true, .name = "msgctl", .parser = {parse_long_arg, parse_integer_arg,
                      parse_integer_arg, parse_pointer_arg}},
-    [__NR_fcntl] = {.slow = false, .name = "fcntl", .parser = {parse_long_arg, parse_integer_arg,
+    [__NR_fcntl] = {.slow = true, .name = "fcntl", .parser = {parse_long_arg, parse_integer_arg,
                     parse_fcntlop, parse_pointer_arg}},
     [__NR_flock] = {.slow = false, .name = "flock", .parser = {NULL}},
     [__NR_fsync] = {.slow = false, .name = "fsync", .parser = {parse_long_arg, parse_integer_arg}},
