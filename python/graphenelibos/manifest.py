@@ -41,6 +41,23 @@ def ldd(*args):
             ret.add(line[0])
     return sorted(ret)
 
+def get_distlib():
+    ''' Get distlib directory depending on distro. Examples are:
+    - Ubuntu: /usr/lib/python3/dist-packages
+    - Fedora: /usr/lib64/python3.9/site-packages
+    '''
+    bases = [
+        pathlib.Path(sysconfig.get_path('stdlib',
+                                        vars={'py_version_short': sys.version_info[0]})),
+        sysconfig.get_path('stdlib')
+    ]
+    for base in bases:
+        for directory in ['dist-packages', 'site-packages']:
+            p = os.path.join(base, directory)
+            if os.path.isdir(p):
+                return p
+    return ''
+
 def add_globals_from_python(env):
     paths = sysconfig.get_paths()
     env.globals['python'] = {
@@ -49,9 +66,7 @@ def add_globals_from_python(env):
         'purelib': pathlib.Path(paths['purelib']),
 
         # TODO rpm-based distros
-        'distlib': pathlib.Path(sysconfig.get_path('stdlib',
-                vars={'py_version_short': sys.version_info[0]})
-            ) / 'dist-packages',
+        'distlib': get_distlib(),
 
         'get_config_var': sysconfig.get_config_var,
         'ext_suffix': sysconfig.get_config_var('EXT_SUFFIX'),
