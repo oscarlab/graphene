@@ -9,8 +9,6 @@
 #include "shim_entry_api.h"
 #include "shim_tcb-arch.h"
 
-#define SHIM_TCB_CANARY 0xdeadbeef
-
 struct shim_context {
     PAL_CONTEXT* regs;
     long syscall_nr;
@@ -19,7 +17,6 @@ struct shim_context {
 
 typedef struct shim_tcb shim_tcb_t;
 struct shim_tcb {
-    uint64_t            canary;
     shim_tcb_t*         self;
 
     /* Function pointers for patched code calling into Graphene. */
@@ -46,7 +43,6 @@ static_assert(
     "SHIM_REGISTER_LIBRARY_OFFSET must match");
 
 static inline void __shim_tcb_init(shim_tcb_t* shim_tcb) {
-    shim_tcb->canary = SHIM_TCB_CANARY;
     shim_tcb->self = shim_tcb;
     shim_tcb->syscalldb = &syscalldb;
     shim_tcb->register_library = &register_library;
@@ -66,10 +62,6 @@ static inline void shim_tcb_init(void) {
 
 static inline shim_tcb_t* shim_get_tcb(void) {
     return SHIM_TCB_GET(self);
-}
-
-static inline bool shim_tcb_check_canary(void) {
-    return SHIM_TCB_GET(canary) == SHIM_TCB_CANARY;
 }
 
 #endif /* _SHIM_H_ */

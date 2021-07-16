@@ -15,8 +15,8 @@
 #define SHIM_ENTRY_API_H_
 
 /* Offsets for GS register at which entry vectors can be found */
-#define SHIM_SYSCALLDB_OFFSET         32
-#define SHIM_REGISTER_LIBRARY_OFFSET  40
+#define SHIM_SYSCALLDB_OFFSET         24
+#define SHIM_REGISTER_LIBRARY_OFFSET  32
 
 #ifdef __ASSEMBLER__
 
