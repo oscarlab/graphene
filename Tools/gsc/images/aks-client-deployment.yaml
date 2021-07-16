@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+   name: gsc-ra-tls-secret-prov-client
+   labels:
+      app: gsc-ra-tls-secret-prov-client
+spec:
+   template:
+    metadata:
+       labels:
+           app: gsc-ra-tls-secret-prov-client
+    spec:
+      volumes:
+      - name: var-run-aesmd
+        hostPath:
+          path: /var/run/aesmd
+      containers:
+      - name: gsc-ra-tls-secret-prov-client-container
+        image: <dockerhubusername>/gsc-ra-tls-secret-prov-client-img
+        resources:
+          limits:
+            kubernetes.azure.com/sgx_epc_mem_in_MiB: 25
+        volumeMounts:
+        - name: var-run-aesmd
+          mountPath: /var/run/aesmd
+      restartPolicy: Never
