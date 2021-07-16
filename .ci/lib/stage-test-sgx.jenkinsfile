@@ -103,9 +103,6 @@ stage('test-sgx') {
     }
     timeout(time: 5, unit: 'MINUTES') {
         sh '''
-            # test SGX remote attestation only on Ubuntu 18.04 to keep internet requests to minimum
-            .ci/isdistro bionic || exit 0
-
             cd Examples/ra-tls-mbedtls
             if [ "${ra_client_spid}" != "" ] && [ "${ra_client_key}" != "" ]; \
             then \
@@ -123,9 +120,6 @@ stage('test-sgx') {
     }
     timeout(time: 5, unit: 'MINUTES') {
         sh '''
-            # test SGX remote attestation only on Ubuntu 18.04 to keep internet requests to minimum
-            .ci/isdistro bionic || exit 0
-
             cd Examples/ra-tls-secret-prov
             if [ "${ra_client_spid}" != "" ] && [ "${ra_client_key}" != "" ]; \
             then \
