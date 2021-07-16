@@ -1,0 +1,12 @@
+sgx.enclave_size = "32G"
+sgx.thread_num = 196
+loader.pal_internal_mem_size = "64M"
+
+#pre-fault all enclave pages during enclave initialization by uncommenting below line
+sgx.preheat_enclave = 1
+ 
+libos.check_invalid_pointers = 0
+
+loader.insecure__use_host_env = 1
+
+sgx.trusted_files.openvino = "file:/opt/intel/openvino_2021"

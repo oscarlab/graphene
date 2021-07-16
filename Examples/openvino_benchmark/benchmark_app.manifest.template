@@ -1,0 +1,91 @@
+# OpenVINO (benchmark_app) manifest example
+#
+# This manifest was prepared and tested on Ubuntu 18.04.
+
+libos.entrypoint = "benchmark_app"
+
+# Graphene environment, including the path to the library OS 
+loader.preload = "file:{{ graphene.libos }}"
+
+# Graphene log level
+loader.log_level = "{{ log_level }}"
+
+# Read application arguments directly from the command line. Don't use this on production!
+loader.insecure__use_cmdline_argv = true
+
+# Environment variables
+loader.env.LD_LIBRARY_PATH = "/lib:{{ openvino_dir }}/deployment_tools/inference_engine/external/tbb/lib:{{ openvino_dir }}/deployment_tools/inference_engine/lib/intel64:{{ arch_libdir }}:{{ openvino_dir }}/opencv/lib:{{ openvino_dir }}/deployment_tools/ngraph/lib:/usr/{{ arch_libdir }}"
+
+# Mounted FSes. The following "chroot" FSes mount a part of the host FS into the
+# guest. Other parts of the host FS will not be available in the guest.
+
+# Default glibc files, mounted from the Runtime directory in GRAPHENE_DIR.
+fs.mount.lib.type = "chroot"
+fs.mount.lib.path = "/lib"
+fs.mount.lib.uri = "file:{{ graphene.runtimedir() }}"
+
+# Host-level libraries (e.g., /lib/x86_64-linux-gnu) required by OpenVINO.
+fs.mount.lib2.type = "chroot"
+fs.mount.lib2.path = "{{ arch_libdir }}"
+fs.mount.lib2.uri = "file:{{ arch_libdir }}"
+
+# More host-level libraries (e.g., /usr/lib/x86_64-linux-gnu) required by OpenVINO.
+fs.mount.lib3.type = "chroot"
+fs.mount.lib3.path = "/usr/{{ arch_libdir }}"
+fs.mount.lib3.uri = "file:/usr/{{ arch_libdir }}"
+
+# Host-level directory to NSS files required by Glibc + NSS libs.
+fs.mount.etc.type = "chroot"
+fs.mount.etc.path = "/etc"
+fs.mount.etc.uri = "file:/etc"
+
+# Mount the OpenVINO directory
+fs.mount.openvino.type = "chroot"
+fs.mount.openvino.path = "{{ openvino_dir }}"
+fs.mount.openvino.uri = "file:{{ openvino_dir }}"
+
+fs.mount.sample_app.type = "chroot"
+fs.mount.sample_app.path = "{{ HOME }}/inference_engine_cpp_samples_build"
+fs.mount.sample_app.uri = "file:{{ HOME }}/inference_engine_cpp_samples_build"
+
+fs.mount.local.path = "/usr/local/lib"
+fs.mount.local.type = "chroot"
+fs.mount.local.uri = "file:/usr/local/lib"
+
+# Set the virtual memory size of the SGX enclave. For SGX v1, the enclave
+# size must be specified during signing. If OpenVINO needs more virtual memory
+# than the enclave size, Graphene will not be able to allocate it.
+sgx.enclave_size = "32G"
+# Set the maximum number of enclave threads. For SGX v1, the number of enclave
+# TCSes must be specified during signing, so the application cannot use more
+# threads than the number of TCSes. Note that Graphene also creates an internal
+# thread for handling inter-process communication (IPC), and potentially another
+# thread for asynchronous events. Therefore, the actual number of threads that
+# the application can create is (sgx.thread_num - 2).
+sgx.thread_num = 196
+
+# SGX trusted files
+sgx.trusted_files.runtime = "file:{{ graphene.runtimedir() }}/"
+sgx.trusted_files.arch_libdir = "file:{{ arch_libdir }}/"
+sgx.trusted_files.usr_arch_libdir = "file:/usr/{{ arch_libdir }}/"
+sgx.trusted_files.inferenceengine_libs = "file:{{ openvino_dir }}/deployment_tools/inference_engine/lib/intel64/"
+sgx.trusted_files.tbb_libs = "file:{{ openvino_dir }}/deployment_tools/inference_engine/external/tbb/lib/"
+sgx.trusted_files.libformatreader = "file:{{ HOME }}/inference_engine_cpp_samples_build/intel64/Release/lib/libformat_reader.so"
+sgx.trusted_files.opencv_libs = "file:{{ openvino_dir }}/opencv/lib/"
+sgx.trusted_files.libngraph = "file:{{ openvino_dir }}/deployment_tools/ngraph/lib/libngraph.so"
+sgx.trusted_files.app = "file:benchmark_app"
+sgx.trusted_files.model = "file:./model"
+
+# Name Service Switch (NSS) files (Glibc reads these files)
+sgx.allowed_files.nsswitch = "file:/etc/nsswitch.conf"
+sgx.allowed_files.ethers = "file:/etc/ethers"
+sgx.allowed_files.hosts = "file:/etc/hosts"
+sgx.allowed_files.group = "file:/etc/group"
+sgx.allowed_files.passwd = "file:/etc/passwd"
+
+sgx.nonpie_binary = true
+
+#pre-fault all enclave pages during enclave initialization by uncommenting below line
+sgx.preheat_enclave = true
+
+libos.check_invalid_pointers = false
