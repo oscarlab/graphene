@@ -17,6 +17,19 @@ pipeline {
                 '''
             }
         }
+        stage('Test_CD') {
+            steps {
+                sh '''
+                    # Test the build of Graphene base images which are automatically
+                    # pushed to Docker Hub after a merge. This does not test the actual
+                    # continuous deployment Github action, instead only tests the
+                    # underlying script.
+                    cd Tools/gsc
+                    make build-images
+                    make distclean
+                '''
+            }
+        }
         stage('Test') {
             steps {
                 sh '''

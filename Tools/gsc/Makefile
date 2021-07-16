@@ -5,10 +5,13 @@
 # templates/Dockerfile.*.compile.template changes), these automatically generated files need to be
 # updated. Generally, changes to Graphene do not require rebuilding these Docker files.
 
-IMAGES=graphene_aks
+IMAGES=aks
 VERSIONS=latest
+# Official Docker Hub organization name. In case of a name change in Docker Hub, this name must be
+# changed.
+DOCKERHUB_ORGANIZATION=graphenelibos
 
-all: $(addsuffix .dockerfile, $(addprefix $(addprefix images/, ${IMAGES}), .${VERSIONS}))
+all: generate-dockerfiles build-images
 
 config.aks.%.yaml:
 	printf \
@@ -20,9 +23,29 @@ config.aks.%.yaml:
 	    Repository: \"https://github.com/intel/SGXDataCenterAttestationPrimitives.git\"\n\
 	    Branch: \"DCAP_1.7 && cp -r driver/linux/* .\"\n" > $@
 
-images/graphene_aks.latest.dockerfile: config.aks.master.yaml
+images:
+	mkdir -p images
+
+images/graphene_aks.latest.dockerfile: config.aks.master.yaml images
 	./gsc build-graphene -f -c $< graphene-aks
 	mv build/gsc-graphene-aks/Dockerfile.compile $@
+
+.PHONY: generate-dockerfiles
+generate-dockerfiles: $(addsuffix .dockerfile, $(addprefix $(addprefix images/, graphene_${IMAGES}), .${VERSIONS}))
+
+.PHONY: build-images
+build-images: $(addprefix $(addprefix build-, $(IMAGES))-, $(VERSIONS))
+
+.PHONY: build-aks-%
+build-aks-%: images/graphene_aks.%.dockerfile
+	docker build --rm --no-cache -t $(DOCKERHUB_ORGANIZATION)/aks:$* -f images/graphene_aks.$*.dockerfile images/
+
+.PHONY: push-images
+push-images: $(addprefix $(addprefix push-, $(IMAGES))-, $(VERSIONS))
+
+.PHONY: push-aks-%
+push-aks-%:
+	docker push $(DOCKERHUB_ORGANIZATION)/aks:$*
 
 .PHONY: distclean
 distclean: clean
@@ -32,3 +55,7 @@ distclean: clean
 .PHONY: clean
 clean:
 	$(RM) config.aks.*.yaml
+
+.PHONY: clean-images
+clean-images:
+	docker rmi -f $(addprefix $(addprefix $(DOCKERHUB_ORGANIZATION)/, $(IMAGES)):, $(VERSIONS))

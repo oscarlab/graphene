@@ -1,0 +1,29 @@
+name: Graphene Docker Image CD
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+
+  build:
+    if: ${{ github.repository == 'oscarlab/graphene' }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name: Install Python dependencies
+      run: |
+        pip install jinja2 pyyaml docker
+    - name: Build the Graphene Docker image
+      env: # Set Docker Hub account information to environment variables
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      run: |
+        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+        cd Tools/gsc
+        make build-images
+        make push-images
