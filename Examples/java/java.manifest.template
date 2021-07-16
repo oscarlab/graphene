@@ -1,0 +1,52 @@
+# Java manifest example
+#
+# This manifest was prepared and tested on Ubuntu 18.04 and tested with openjdk11
+
+libos.entrypoint = "{{ entrypoint }}"
+
+# Path to the library OS
+loader.preload = "file:{{ graphene.libos }}"
+
+# Graphene log level
+loader.log_level = "{{ log_level }}"
+
+# Read application arguments directly from the command line. Don't use this on production!
+loader.insecure__use_cmdline_argv = true
+
+# Environment variables for Java
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
+
+# Mounted FSes. The following "chroot" FSes mount a part of the host FS into the
+# guest. Other parts of the host FS will not be available in the guest.
+
+# Default glibc files, mounted from the Runtime directory in GRAPHENEDIR.
+fs.mount.lib.type = "chroot"
+fs.mount.lib.path = "/lib"
+fs.mount.lib.uri = "file:{{ graphene.runtimedir() }}"
+
+# Host-level libraries (e.g., /lib/x86_64-linux-gnu) required by the Java executable
+fs.mount.lib2.type = "chroot"
+fs.mount.lib2.path = "{{ arch_libdir }}"
+fs.mount.lib2.uri = "file:{{ arch_libdir }}"
+
+# Host-level directory (/usr) required by the Java executable
+fs.mount.usr.type = "chroot"
+fs.mount.usr.path = "/usr"
+fs.mount.usr.uri = "file:/usr"
+
+# SGX general options
+
+# If using 64G or greater enclave sizes, the JVM flag `-Xmx4G` can be omitted in graphene-sgx.
+sgx.enclave_size = "8G"
+
+# SGX needs minimum 32 threads for loading a JVM.
+sgx.thread_num = 32
+
+# SGX trusted libraries
+sgx.trusted_files.java = "file:{{ entrypoint }}"
+sgx.trusted_files.runtime = "file:{{ graphene.runtimedir() }}/"
+sgx.trusted_files.arch_libdir = "file:{{ arch_libdir }}/"
+sgx.trusted_files.usr_arch_libdir = "file:/usr/{{ arch_libdir }}/"
+sgx.trusted_files.jdk_libs = "file:/usr/lib/jvm/java-11-openjdk-amd64/lib"
+sgx.trusted_files.atk_wrapper = "file:/usr/share/java/java-atk-wrapper.jar"
+sgx.trusted_files.hello = "file:hello.jar"
