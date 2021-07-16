@@ -111,6 +111,8 @@ static int insert_envs_from_manifest(const char*** envpp) {
     size_t idx = 0;
     for (const char** orig_env = *envpp; *orig_env; orig_env++) {
         char* orig_env_key_end = strchr(*orig_env, '=');
+        if (!orig_env_key_end)
+           return -PAL_ERROR_DENIED;
 
         *orig_env_key_end = '\0';
         toml_raw_t toml_env_raw = toml_raw_in(toml_envs, *orig_env);
@@ -130,7 +132,9 @@ static int insert_envs_from_manifest(const char*** envpp) {
 
     for (ssize_t i = 0; i < toml_envs_cnt; i++) {
         const char* toml_env_key = toml_key_in(toml_envs, i);
-        assert(toml_env_key);
+        if (!toml_env_key)
+           return -PAL_ERROR_DENIED;
+
         toml_raw_t toml_env_value_raw = toml_raw_in(toml_envs, toml_env_key);
         assert(toml_env_value_raw);
 

@@ -391,6 +391,9 @@ int _DkCpuIdRetrieve(unsigned int leaf, unsigned int subleaf, unsigned int value
         }
     }
 
+    if (!known_leaf)
+       goto fail;
+
     if ((leaf == 0x07 && subleaf != 0 && subleaf != 1) ||
         (leaf == 0x0F && subleaf != 0 && subleaf != 1) ||
         (leaf == 0x10 && subleaf != 0 && subleaf != 1 && subleaf != 2) ||
