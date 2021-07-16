@@ -53,7 +53,10 @@ static int create_pipes(struct shim_handle* srv, struct shim_handle* cli, int fl
     srv->pal_handle = hdl1;
 
     if (flags & O_NONBLOCK) {
-        /* `cli` - `hdl2` - has this flag already set by the call to `DkStreamOpen`. */
+        ret = set_handle_nonblocking(cli, /*on=*/true);
+        if (ret < 0)
+            goto out;
+
         ret = set_handle_nonblocking(srv, /*on=*/true);
         if (ret < 0) {
             /* Restore original handle, if any. */
