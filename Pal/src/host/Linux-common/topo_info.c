@@ -206,6 +206,10 @@ static int get_core_topo_info(PAL_TOPO_INFO* topo_info) {
 
     char filename[128];
     for (int idx = 0; idx < online_logical_cores; idx++) {
+        /* Initialize all cores to be part of node 0. We later update this when reading numa
+         * topology. */
+        core_topology[idx].node = 0;
+
         /* cpu0 is always online and thus the "online" file is not present. */
         if (idx != 0) {
             snprintf(filename, sizeof(filename), "/sys/devices/system/cpu/cpu%d/online", idx);
@@ -239,6 +243,53 @@ out:
     return ret;
 }
 
+static int extract_cpu_node_mapping(unsigned int node, const char* cpumap,
+                                    PAL_CORE_TOPO_INFO* core_topology) {
+    int possible_logical_cores = get_hw_resource("/sys/devices/system/cpu/possible",
+                                                 /*count=*/true);
+    if (possible_logical_cores < 0)
+        return possible_logical_cores;
+
+    /* Each submap of the node cpumap is atmost 32 bits */
+    int bitmap_sz = BITS_IN_TYPE(int);
+    int num_bitmaps = (possible_logical_cores > bitmap_sz) ? possible_logical_cores / bitmap_sz : 1;
+
+    while (*cpumap) {
+        while (*cpumap == ' ' || *cpumap == '\t' || *cpumap == ',' || *cpumap == '\n')
+            cpumap++;
+
+        if (*cpumap == '\0')
+            break;
+
+        const char* end = NULL;
+        unsigned long bitmap;
+        bool overflowed = str_to_ulong(cpumap, 16, &bitmap, &end);
+        if (end == cpumap || overflowed)
+            return -EINVAL;
+
+        if (*end != '\0' && *end != ',' && *end != '\n')
+            return -EINVAL;
+        cpumap = end;
+
+        for (int pos = 0; bitmap; pos++) {
+            assert(pos < bitmap_sz);
+            if (bitmap & 1UL) {
+                int cpu = (num_bitmaps - 1) * bitmap_sz + pos;
+                core_topology[cpu].node = node;
+            }
+            bitmap = bitmap >> 1;
+        }
+        num_bitmaps--;
+    }
+
+    /* We have an inconsistency between the node cpumap and the total cores present in the system.
+     * cpumap should be able to encompass all cores present in the system. */
+    if (num_bitmaps != 0)
+        return -EINVAL;
+
+    return 0;
+}
+
 /* Get NUMA topology-related info */
 static int get_numa_topo_info(PAL_TOPO_INFO* topo_info) {
     int ret;
@@ -259,6 +310,11 @@ static int get_numa_topo_info(PAL_TOPO_INFO* topo_info) {
     for (int idx = 0; idx < num_nodes; idx++) {
         snprintf(filename, sizeof(filename), "/sys/devices/system/node/node%d/cpumap", idx);
         READ_FILE_BUFFER(filename, numa_topology[idx].cpumap, /*failure_label=*/out_topology);
+
+        /* Extract cpu<->node info from cpumap and update core_topology struct */
+        ret = extract_cpu_node_mapping(idx, numa_topology[idx].cpumap, topo_info->core_topology);
+        if (ret < 0)
+            goto out_topology;
 
         snprintf(filename, sizeof(filename), "/sys/devices/system/node/node%d/distance", idx);
         READ_FILE_BUFFER(filename, numa_topology[idx].distance, /*failure_label=*/out_topology);

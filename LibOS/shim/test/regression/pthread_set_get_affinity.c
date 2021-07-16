@@ -9,6 +9,7 @@
 #include <err.h>
 #include <errno.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +31,15 @@ static void* dowork(void* args) {
     while (iterations != 0)
         iterations--;
 
-    int ret = pthread_barrier_wait(&barrier);
+    unsigned int cpu, node;
+    int ret =  syscall(SYS_getcpu, &cpu, &node);
+    if (ret < 0) {
+        err(EXIT_FAILURE, "sched_getcpu failed!");
+    } else {
+        printf("Thread %ld is running on cpu: %d, node: %d\n", syscall(SYS_gettid), cpu, node);
+    }
+
+    ret = pthread_barrier_wait(&barrier);
     if (ret != 0 && ret != PTHREAD_BARRIER_SERIAL_THREAD) {
         errx(EXIT_FAILURE, "Child did not wait on barrier!");
     }

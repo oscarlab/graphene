@@ -313,6 +313,7 @@ typedef struct PAL_CORE_TOPO_INFO_ {
     char core_id[PAL_SYSFS_INT_FILESZ];
     char core_siblings[PAL_SYSFS_MAP_FILESZ];
     char thread_siblings[PAL_SYSFS_MAP_FILESZ];
+    unsigned int node; /* numa node closest to the core */
     PAL_CORE_CACHE_INFO* cache; /* Array of size num_cache_index, owned by this struct */
 } PAL_CORE_TOPO_INFO;
 

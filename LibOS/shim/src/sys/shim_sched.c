@@ -156,13 +156,6 @@ long shim_do_sched_setaffinity(pid_t pid, unsigned int cpumask_size, unsigned lo
     if (pid == 0)
         get_thread(thread);
 
-    /* Internal graphene threads are not affinitized; if we hit an internal thread here, this is
-       some bug in user app. */
-    if (is_internal(thread)) {
-        put_thread(thread);
-        return -ESRCH;
-    }
-
     ret = DkThreadSetCpuAffinity(thread->pal_handle, cpumask_size, user_mask_ptr);
     if (ret < 0) {
         put_thread(thread);
@@ -203,13 +196,6 @@ long shim_do_sched_getaffinity(pid_t pid, unsigned int cpumask_size, unsigned lo
     if (pid == 0)
         get_thread(thread);
 
-    /* Internal graphene threads are not affinitized; if we hit an internal thread here, this is
-       some bug in user app. */
-    if (is_internal(thread)) {
-        put_thread(thread);
-        return -ESRCH;
-    }
-
     memset(user_mask_ptr, 0, cpumask_size);
     ret = DkThreadGetCpuAffinity(thread->pal_handle, bitmask_size_in_bytes, user_mask_ptr);
     if (ret < 0) {
@@ -222,22 +208,76 @@ long shim_do_sched_getaffinity(pid_t pid, unsigned int cpumask_size, unsigned lo
     return bitmask_size_in_bytes;
 }
 
-/* dummy implementation: always return cpu0  */
+/* Approx. implementation that returns a random bit that is set from the cpu affinity mask
+ * associated with the current calling thread */
 long shim_do_getcpu(unsigned* cpu, unsigned* node, struct getcpu_cache* unused) {
     __UNUSED(unused);
+
+    size_t cpu_cnt = g_pal_control->cpu_info.online_logical_cores;
+
+    /* Allocate memory to hold the thread's cpu affinity mask. */
+    size_t max_cpu_bitmask = BITS_TO_LONGS(cpu_cnt);
+    size_t bitmask_size_in_bytes = max_cpu_bitmask * sizeof(unsigned long);
+    unsigned long* mask = malloc(bitmask_size_in_bytes);
+    if (!mask)
+        return -ENOMEM;
+
+    struct shim_thread* thread = get_cur_thread();
+    int ret = DkThreadGetCpuAffinity(thread->pal_handle, bitmask_size_in_bytes, mask);
+    if (ret < 0) {
+        free(mask);
+        return pal_to_unix_errno(ret);
+    }
+
+    /* CPU affinity mask is basically an array of unsigned long(s). Below logic finds the first
+     * non-empty unsigned long and returns a random bit that is set to the user. */
+    unsigned int num_bits = 0;
+    unsigned int idx = 0;
+    while (idx < max_cpu_bitmask) {
+        num_bits = count_ulong_bits_set(mask[idx]);
+        if (num_bits)
+            break;
+        idx++;
+    }
+
+    /* There should be atleast one bit set as part of the cpu affinity mask. */
+    if (num_bits == 0) {
+        free(mask);
+        return -EINVAL;
+    }
+
+    /* Generate a random number and use it to find a random bit set in the first non-empty
+     * unsigned long of the cpu affinity mask. */
+    unsigned long rand_num = 0;
+    ret = DkRandomBitsRead(&rand_num, sizeof(rand_num));
+    if (ret < 0) {
+        free(mask);
+        return pal_to_unix_errno(ret);
+    }
+
+    unsigned int nth_setbit = rand_num % num_bits;
+    unsigned long cpumask = mask[idx];
+    for (unsigned int j = 0; j < nth_setbit; j++) {
+        /* At each iteration, find the lowest bit set in cpumask and unset it; this will bring
+         * us to the nth_setbit after nth_setbit iterations. */
+        cpumask = cpumask & ~(1UL << __builtin_ctzl(cpumask));
+    }
+
+    unsigned int cpu_current = __builtin_ctzl(cpumask) + BITS_IN_TYPE(unsigned long) * idx;
+    free(mask);
 
     if (cpu) {
         if (!is_user_memory_writable(cpu, sizeof(*cpu))) {
             return -EFAULT;
         }
-        *cpu = 0;
+        *cpu = cpu_current;
     }
 
     if (node) {
         if (!is_user_memory_writable(node, sizeof(*node))) {
             return -EFAULT;
         }
-        *node = 0;
+        *node = g_pal_control->topo_info.core_topology[cpu_current].node;
     }
 
     return 0;
