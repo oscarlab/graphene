@@ -1,0 +1,79 @@
+# This manifest was tested on Ubuntu 18.04 with python3.6.
+
+libos.entrypoint = "{{ entrypoint }}"
+loader.preload = "file:{{ graphene.libos }}"
+
+# Graphene log level
+loader.log_level = "{{ log_level }}"
+
+# Read application arguments directly from the command line. Don't use this on production!
+loader.insecure__use_cmdline_argv = 1
+
+# Propagate environment variables from the host. Don't use this on production!
+loader.insecure__use_host_env = 1
+
+# Disable address space layout randomization. Don't use this on production!
+loader.insecure__disable_aslr = 1
+
+# Update Library Path - overwrites environment variable
+loader.env.LD_LIBRARY_PATH = "{{ python.stdlib }}/lib:/lib:{{ arch_libdir }}:/usr/lib:/usr/{{ arch_libdir }}"
+
+# Additional memory for Graphene's internal use
+loader.pal_internal_mem_size = "512M"
+
+# Default glibc files, mounted from graphene's Runtime directory
+fs.mount.lib.type = "chroot"
+fs.mount.lib.path = "/lib"
+fs.mount.lib.uri = "file:{{ graphene.runtimedir() }}"
+
+# More libraries required by Tensorflow
+fs.mount.lib2.type = "chroot"
+fs.mount.lib2.path = "{{ arch_libdir }}"
+fs.mount.lib2.uri = "file:{{ arch_libdir }}"
+
+fs.mount.usr.type = "chroot"
+fs.mount.usr.path = "/usr"
+fs.mount.usr.uri = "file:/usr"
+
+fs.mount.pyhome.type = "chroot"
+fs.mount.pyhome.path = "{{ python.stdlib }}"
+fs.mount.pyhome.uri = "file:{{ python.stdlib }}"
+
+fs.mount.pydisthome.type = "chroot"
+fs.mount.pydisthome.path = "{{ python.distlib }}"
+fs.mount.pydisthome.uri = "file:{{ python.distlib }}"
+
+fs.mount.pydistpath.type = "chroot"
+fs.mount.pydistpath.path = "{{ pythondistpath }}"
+fs.mount.pydistpath.uri = "file:{{ pythondistpath }}"
+
+fs.mount.tmp.type = "chroot"
+fs.mount.tmp.path = "/tmp"
+fs.mount.tmp.uri = "file:/tmp"
+
+fs.mount.etc.type = "chroot"
+fs.mount.etc.path = "/etc"
+fs.mount.etc.uri = "file:/etc"
+
+# SGX general options
+sgx.enclave_size = "32G"
+sgx.thread_num = 256
+sgx.preheat_enclave = 1
+sgx.nonpie_binary = 1
+
+# SGX trusted files
+sgx.trusted_files.runtime = "file:{{ graphene.runtimedir() }}/"
+sgx.trusted_files.arch_libdir = "file:{{ arch_libdir }}/"
+sgx.trusted_files.usr_arch_libdir = "file:/usr/{{ arch_libdir }}/"
+sgx.trusted_files.python = "file:{{ entrypoint }}"
+sgx.trusted_files.pyhome = "file:{{ python.stdlib }}"
+sgx.trusted_files.pydisthome = "file:{{ python.distlib }}"
+sgx.trusted_files.pydistpath = "file:{{ pythondistpath }}"
+
+# SGX allowed files
+sgx.allowed_files.tmp = "file:/tmp/"
+sgx.allowed_files.etc = "file:/etc/"
+sgx.allowed_files.output = "file:output/"
+sgx.allowed_files.scripts = "file:models/"
+sgx.allowed_files.dataDir = "file:data/"
+sgx.allowed_files.keras = "file:root/.keras/keras.json"
