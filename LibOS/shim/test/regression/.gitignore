@@ -69,6 +69,8 @@
 /multi_pthread
 /multi_pthread_exitless
 /openmp
+/pf_rename
+/pftmp
 /pipe
 /pipe_nonblocking
 /pipe_ocloexec

@@ -384,6 +384,20 @@ static bool ipf_init_new_file(pf_context_t* pf, const char* path) {
     return true;
 }
 
+static bool ipf_rename_file(pf_context_t* pf, const char* new_path) {
+    if (!new_path) {
+        pf->last_error = PF_STATUS_INVALID_PATH;
+        return false;
+    }
+
+    memset(&pf->encrypted_part_plain.path, 0, sizeof(pf->encrypted_part_plain.path));
+    memcpy(pf->encrypted_part_plain.path, new_path, strlen(new_path) + 1);
+
+    pf->need_writing = true;
+
+    return true;
+}
+
 static bool ipf_close(pf_context_t* pf) {
     void* data;
     bool retval = true;
@@ -1326,6 +1340,29 @@ pf_status_t pf_flush(pf_context_t* pf) {
 
     if (!ipf_internal_flush(pf))
         return pf->last_error;
+    return PF_STATUS_SUCCESS;
+}
+
+pf_status_t pf_rename(pf_context_t* pf, const char* new_path) {
+    if (!g_initialized)
+        return PF_STATUS_UNINITIALIZED;
+
+    if (!pf) {
+        DEBUG_PF("pf_rename(PF): PF not initialized\n");
+        return PF_STATUS_UNKNOWN_ERROR;
+    }
+
+    if (new_path && strlen(new_path) > PATH_MAX_SIZE - 1) {
+        pf->last_error = PF_STATUS_PATH_TOO_LONG;
+        return PF_STATUS_PATH_TOO_LONG;
+    }
+
+    if (!ipf_rename_file(pf, new_path))
+        return pf->last_error;
+
+    if (!ipf_internal_flush(pf))
+        return pf->last_error;
+
     return PF_STATUS_SUCCESS;
 }
 

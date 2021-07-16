@@ -49,7 +49,7 @@ static inline int PAL_CREATE_TO_LINUX_OPEN(int create) {
 }
 
 static inline int PAL_OPTION_TO_LINUX_OPEN(int options) {
-    assert(WITHIN_MASK(options, PAL_OPTION_CLOEXEC | PAL_OPTION_NONBLOCK));
+    assert(WITHIN_MASK(options, PAL_OPTION_CLOEXEC | PAL_OPTION_NONBLOCK | PAL_OPTION_RENAME));
     return (options & PAL_OPTION_CLOEXEC  ? O_CLOEXEC  : 0) |
            (options & PAL_OPTION_NONBLOCK ? O_NONBLOCK : 0);
 }

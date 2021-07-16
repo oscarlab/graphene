@@ -992,7 +992,7 @@ static int chroot_rename(struct shim_dentry* old, struct shim_dentry* new) {
     }
 
     PAL_HANDLE pal_hdl = NULL;
-    ret = DkStreamOpen(qstrgetstr(&old_data->host_uri), 0, 0, 0, 0, &pal_hdl);
+    ret = DkStreamOpen(qstrgetstr(&old_data->host_uri), 0, 0, 0, PAL_OPTION_RENAME, &pal_hdl);
     if (ret < 0) {
         return pal_to_unix_errno(ret);
     }

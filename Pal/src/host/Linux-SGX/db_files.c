@@ -53,14 +53,25 @@ static int file_open(PAL_HANDLE* handle, const char* type, const char* uri, int 
 
     struct protected_file* pf = get_protected_file(path);
     struct stat st;
+
     /* whether to re-initialize the PF */
     bool pf_create = (create & PAL_CREATE_ALWAYS) || (create & PAL_CREATE_TRY);
 
+    int flags = PAL_ACCESS_TO_LINUX_OPEN(access)  |
+                PAL_CREATE_TO_LINUX_OPEN(create)  |
+                PAL_OPTION_TO_LINUX_OPEN(options) ;
+
+    /* If it is a protected file and the file is opened for renaming, we will need to update
+     * the metadata in the file, so open with RDWR mode with necessary share permissions. */
+    if (pf && (options & PAL_OPTION_RENAME)) {
+        share = PAL_SHARE_OWNER_R | PAL_SHARE_OWNER_W;
+        flags |= O_RDWR;
+    }
+
+    options &= ~PAL_OPTION_RENAME; /* we already have the flags for open, reset the RENAME flag */
+
     /* try to do the real open */
-    int fd = ocall_open(uri, PAL_ACCESS_TO_LINUX_OPEN(access)  |
-                             PAL_CREATE_TO_LINUX_OPEN(create)  |
-                             PAL_OPTION_TO_LINUX_OPEN(options),
-                        share);
+    int fd = ocall_open(uri, flags, share);
     if (fd < 0) {
         ret = unix_to_pal_error(fd);
         goto out;
@@ -720,6 +731,43 @@ static int file_rename(PAL_HANDLE handle, const char* type, const char* uri) {
     char* tmp = strdup(uri);
     if (!tmp)
         return -PAL_ERROR_NOMEM;
+
+
+    struct protected_file* pf = find_protected_file_handle(handle);
+
+    if (pf) {
+        size_t uri_size = strlen(uri) + 1;
+        char* new_path = (char*)calloc(1, uri_size);
+
+        if (!new_path) {
+            free(tmp);
+            return -PAL_ERROR_NOMEM;
+        }
+
+        if (get_norm_path(uri, new_path, &uri_size) < 0) {
+            log_warning("Could not normalize path (%s)", uri);
+            free(tmp);
+            free(new_path);
+            return -PAL_ERROR_DENIED;
+        }
+
+        if (!get_protected_file(new_path)) {
+            log_warning("New path is disallowed for protected files (%s)", new_path);
+            free(tmp);
+            free(new_path);
+            return -PAL_ERROR_DENIED;
+        }
+
+        pf_status_t pf_ret = pf_rename(pf->context, new_path);
+
+        free(new_path);
+
+        if (PF_FAILURE(pf_ret)) {
+            log_warning("pf_rename failed: %s", pf_strerror(pf_ret));
+            free(tmp);
+            return -PAL_ERROR_DENIED;
+        }
+    }
 
     int ret = ocall_rename(handle->file.realpath, uri);
     if (ret < 0) {

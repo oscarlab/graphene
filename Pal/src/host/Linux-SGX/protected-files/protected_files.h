@@ -275,4 +275,15 @@ pf_status_t pf_get_handle(pf_context_t* pf, pf_handle_t* handle);
  */
 pf_status_t pf_flush(pf_context_t* pf);
 
+/*!
+ * \brief Update the path in the metadata during a rename
+ *
+ * \param [in] pf PF context
+ * \param [in] new_path Renamed path
+ * \return PF status
+ * \details For protected files, the file name including the path is stored in the encrypted
+ *          metadata which is verified against the actual path during open. So, during a rename
+ *          we need to update the metadata with the new path.
+ */
+pf_status_t pf_rename(pf_context_t* pf, const char* new_path);
 #endif /* PROTECTED_FILES_H_ */

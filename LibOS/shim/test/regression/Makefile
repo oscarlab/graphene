@@ -60,6 +60,7 @@ c_executables = \
 	mprotect_prot_growsdown \
 	multi_pthread \
 	openmp \
+	pf_rename \
 	pipe \
 	pipe_nonblocking \
 	pipe_ocloexec \

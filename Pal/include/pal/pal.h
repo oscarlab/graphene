@@ -302,8 +302,9 @@ enum PAL_OPTION {
     PAL_OPTION_CLOEXEC       = 1,
     PAL_OPTION_EFD_SEMAPHORE = 2, /*!< specific to `eventfd` syscall */
     PAL_OPTION_NONBLOCK      = 4,
+    PAL_OPTION_RENAME        = 8, /*!<specific to `rename` syscall */
 
-    PAL_OPTION_MASK          = 7,
+    PAL_OPTION_MASK          = 15,
 };
 
 #define WITHIN_MASK(val, mask) (((val) | (mask)) == (mask))
